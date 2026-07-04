@@ -7,7 +7,7 @@ from conftest import DuplicateScanner
 def scanner(cfg, mock_log, mock_disk_io):
     return DuplicateScanner(cfg, mock_log, mock_disk_io)
 
-# ── No Duplicates ──
+#  No Duplicates
 
 class TestNoDuplicates:
     def test_logs_clean_when_no_duplicates(self, scanner, cfg):
@@ -26,7 +26,7 @@ class TestNoDuplicates:
         with patch("builtins.input", return_value="n"):
             scanner.scan_and_clean()
 
-# ── Pattern Detection ──
+#  Pattern Detection
 
 class TestPatternDetection:
     def _create(self, base_dir, name):
@@ -77,7 +77,7 @@ class TestPatternDetection:
             scanner.scan_and_clean()
         scanner.log.warn.assert_called()
 
-# ── User Interaction ──
+#  User Interaction
 
 class TestUserInteraction:
     def _create_dup(self, cfg):

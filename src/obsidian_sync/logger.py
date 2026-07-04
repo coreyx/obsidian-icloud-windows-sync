@@ -55,7 +55,7 @@ class SyncLogger:
         ts = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         self.log_file = os.path.join(self.config.logs_dir, f"sync_{ts}.log")
 
-    # ── Core output ──────────────────────────────────────────────
+    #  Core output
 
     def console_event(self, icon: str, color, msg_type: str, msg: str, level: str = "normal"):
         """
@@ -104,9 +104,9 @@ class SyncLogger:
                 f.writelines(self._buffer)
             self._buffer.clear()
         except Exception as e:
-            self.console_event("🔴", Fore.RED, "FAILED", f"Log Write Failed: {e}", level="important")
+            self.console_event("", Fore.RED, "FAILED", f"Log Write Failed: {e}", level="important")
 
-    # ── Log methods ──────────────────────────────────────────────
+    #  Log methods
 
     def info(self, msg_type: str, msg: str, level: str = "verbose"):
         """
@@ -117,7 +117,7 @@ class SyncLogger:
             msg (str): The main log message.
             level (str, optional): The `LEVEL_MAP`.
         """
-        self.console_event("🔵", Fore.CYAN, msg_type, msg, level=level)
+        self.console_event("", Fore.CYAN, msg_type, msg, level=level)
         self.write_to_file(msg_type, msg)
 
     def warn(self, msg_type: str, msg: str, level: str = "verbose"):
@@ -129,7 +129,7 @@ class SyncLogger:
             msg (str): The main log message.
             level (str, optional): The `LEVEL_MAP`.
         """
-        self.console_event("🟡", Fore.YELLOW, msg_type, msg, level=level)
+        self.console_event("", Fore.YELLOW, msg_type, msg, level=level)
         self.write_to_file(msg_type, msg)
 
     def error(self, msg_type: str, msg: str, level: str = "important", critical: bool = False):
@@ -142,12 +142,12 @@ class SyncLogger:
             level (str, optional): The `LEVEL_MAP`.
             critical (bool, optional): If True, flushes logs and forcibly exits the program via `sys.exit(1)` to prevent data corruption. Defaults to False.
         """
-        self.console_event("🔴", Fore.RED, msg_type, msg, level=level)
+        self.console_event("", Fore.RED, msg_type, msg, level=level)
         self.write_to_file(msg_type, msg)
         if critical:
             self.write_to_file("ERROR", "Critical error. Stopping to prevent data loss.")
             self.flush()
-            self.console_event("🔴", Fore.RED, "ERROR", "Critical error. Stopping to prevent data loss.", level="important")
+            self.console_event("", Fore.RED, "ERROR", "Critical error. Stopping to prevent data loss.", level="important")
             raise SystemExit(1)
 
     def success(self, msg_type: str, msg: str, level: str = "important"):
@@ -159,7 +159,7 @@ class SyncLogger:
             msg (str): The main log message.
             level (str, optional): The `LEVEL_MAP`.
         """
-        self.console_event("🟢", Fore.GREEN, msg_type, msg, level=level)
+        self.console_event("", Fore.GREEN, msg_type, msg, level=level)
         self.write_to_file(msg_type, msg)
 
     def custom(self, icons: list[str], colors: list, msg_type: str, msg: str, rel_path: str, level: str = "normal") -> None:
@@ -180,7 +180,7 @@ class SyncLogger:
             self.console_event(icons[1], colors[1], msg_type, msg, level=level)
         self.write_to_file(msg_type, msg)
 
-    # ── Console helpers ──────────────────────────────────────────
+    #  Console helpers
 
     def header(self, files_checked: int):
         """
@@ -190,7 +190,7 @@ class SyncLogger:
             files_checked (int): The number of files that will be scanned, used for display purposes
         """
         ts = datetime.now().strftime('%H:%M:%S')
-        print(f"  {ts:<4}" + Fore.CYAN + f" 🔵 {'INFO':<12} Scanning... {files_checked} files" + Style.RESET_ALL, flush=True)
+        print(f"  {ts:<4}" + Fore.CYAN + f"  {'INFO':<12} Scanning... {files_checked} files" + Style.RESET_ALL, flush=True)
 
     def idle(self):
         """
@@ -199,7 +199,7 @@ class SyncLogger:
         if self.config.console_level.lower() == "quiet":
             return
         ts = datetime.now().strftime('%H:%M:%S')
-        print(f"  {ts:<4}" + Fore.CYAN + f" 🔵 {'INFO':<12} No changes." + Style.RESET_ALL, end="\r", flush=True)
+        print(f"  {ts:<4}" + Fore.CYAN + f"  {'INFO':<12} No changes." + Style.RESET_ALL, end="\r", flush=True)
 
     def startup(self, mode_str: str):
         """
@@ -245,4 +245,4 @@ class SyncLogger:
                 if old != self.log_file:
                     await asyncio.to_thread(os.remove, old)
         except Exception as e:
-            self.console_event("🔴", Fore.RED, "FAILED", f"Log Cleanup Failed: {e}", level="important")
+            self.console_event("", Fore.RED, "FAILED", f"Log Cleanup Failed: {e}", level="important")

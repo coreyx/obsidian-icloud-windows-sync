@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 from conftest import SyncLogger, strip_ansi, colored, LEVEL_MAP
 from colorama import Fore, Style
 
-# ── Helpers ──
+#  Helpers
 
 class TestHelpers:
     def test_strip_ansi_removes_codes(self):
@@ -28,7 +28,7 @@ class TestHelpers:
         assert LEVEL_MAP["quiet"] < LEVEL_MAP["normal"]
         assert LEVEL_MAP["normal"] < LEVEL_MAP["verbose"]
 
-# ── console_event ──
+#  console_event
 
 class TestConsoleEvent:
     def _logger(self, cfg, level="normal"):
@@ -38,40 +38,40 @@ class TestConsoleEvent:
     def test_important_always_prints(self, cfg, capsys):
         cfg.console_level = "quiet"
         log = SyncLogger(cfg)
-        log.console_event("🔵", Fore.CYAN, "TEST", "msg", level="important")
+        log.console_event("", Fore.CYAN, "TEST", "msg", level="important")
         assert "msg" in capsys.readouterr().out
 
     def test_quiet_suppresses_normal(self, cfg, capsys):
         cfg.console_level = "quiet"
         log = SyncLogger(cfg)
-        log.console_event("🔵", Fore.CYAN, "TEST", "msg", level="normal")
+        log.console_event("", Fore.CYAN, "TEST", "msg", level="normal")
         assert capsys.readouterr().out == ""
 
     def test_quiet_suppresses_verbose(self, cfg, capsys):
         cfg.console_level = "quiet"
         log = SyncLogger(cfg)
-        log.console_event("🔵", Fore.CYAN, "TEST", "msg", level="verbose")
+        log.console_event("", Fore.CYAN, "TEST", "msg", level="verbose")
         assert capsys.readouterr().out == ""
 
     def test_normal_shows_normal_events(self, cfg, capsys):
         cfg.console_level = "normal"
         log = SyncLogger(cfg)
-        log.console_event("🔵", Fore.CYAN, "TEST", "msg", level="normal")
+        log.console_event("", Fore.CYAN, "TEST", "msg", level="normal")
         assert "msg" in capsys.readouterr().out
 
     def test_normal_suppresses_verbose(self, cfg, capsys):
         cfg.console_level = "normal"
         log = SyncLogger(cfg)
-        log.console_event("🔵", Fore.CYAN, "TEST", "msg", level="verbose")
+        log.console_event("", Fore.CYAN, "TEST", "msg", level="verbose")
         assert capsys.readouterr().out == ""
 
     def test_verbose_shows_all(self, cfg, capsys):
         cfg.console_level = "verbose"
         log = SyncLogger(cfg)
-        log.console_event("🔵", Fore.CYAN, "TEST", "msg", level="verbose")
+        log.console_event("", Fore.CYAN, "TEST", "msg", level="verbose")
         assert "msg" in capsys.readouterr().out
 
-# ── write_to_file, flush ──
+#  write_to_file, flush
 
 class TestFileLogging:
     def test_no_log_file_skips_buffering(self, cfg):
@@ -126,7 +126,7 @@ class TestFileLogging:
         log.flush()
         assert log._buffer == ["data"]
 
-# ── Log Methods ──
+#  Log Methods
 
 class TestLogMethods:
     @pytest.fixture
@@ -171,18 +171,18 @@ class TestLogMethods:
 
     def test_custom_verbose_uses_full_msg(self, log, cfg, capsys):
         cfg.console_level = "verbose"
-        log.custom(["→", "🔵"], [Fore.GREEN, Fore.CYAN], "PUSH", "Full detailed message", "short.md", level="verbose")
+        log.custom(["", ""], [Fore.GREEN, Fore.CYAN], "PUSH", "Full detailed message", "short.md", level="verbose")
         out = capsys.readouterr().out
         assert "Full detailed message" in out
 
     def test_custom_normal_uses_short_path(self, log, cfg, capsys):
         cfg.console_level = "normal"
-        log.custom(["→", "🔵"], [Fore.GREEN, Fore.CYAN], "PUSH", "Full detailed message", "short.md", level="normal")
+        log.custom(["", ""], [Fore.GREEN, Fore.CYAN], "PUSH", "Full detailed message", "short.md", level="normal")
         out = capsys.readouterr().out
         assert "short.md" in out
         assert "Full detailed message" not in out
 
-# ── init_log_file ──
+#  init_log_file
 
 class TestInitLogFile:
     def test_sets_log_file_with_timestamp(self, cfg):
@@ -194,7 +194,7 @@ class TestInitLogFile:
         assert log.log_file.startswith(cfg.logs_dir)
         assert os.path.exists(os.path.dirname(log.log_file))
 
-# ── list_log_files ──
+#  list_log_files
 
 class TestListLogFiles:
     def test_returns_sorted_by_mtime(self, cfg, tmp_path):
@@ -216,7 +216,7 @@ class TestListLogFiles:
         result = log.list_log_files(str(tmp_path))
         assert all(f.endswith(".log") for f in result)
 
-# ── cleanup_old_logs ──
+#  cleanup_old_logs
 
 class TestCleanupOldLogs:
     @pytest.mark.asyncio

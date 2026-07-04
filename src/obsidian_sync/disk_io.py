@@ -3,41 +3,30 @@ import asyncio
 import shutil
 import ctypes
 import platform
+import time
+import tempfile
 
 from datetime import datetime
 from ctypes import wintypes
 
-# ── Windows API ──────────────────────────────────────────────────
+from .icloud_status import ICloudStatusChecker
+
+
 MOVEFILE_REPLACE_EXISTING = 0x1
 MOVEFILE_WRITE_THROUGH = 0x8
 FILE_ATTRIBUTE_NORMAL = 0x80
 
-if not platform.system() in ("Windows", "Microsoft"):
+if platform.system() not in ("Windows", "Microsoft"):
     MoveFileExW = None
     SetFileAttributesW = None
 
-# ── Utility functions (used across modules) ──────────────────────
 
 def ensure_dir(path: str) -> None:
-    """
-    Ensures that a directory and all its parent directories exist. Creates them if they are missing.
-
-    Args:
-        path (str): The directory path to ensure.
-    """
     if not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
 
 
 def safe_exists(path: str) -> bool:
-    """
-    Safely checks if a file or directory exists.
-
-    Args:
-        path (str): The path to check.
-    Returns:
-        bool: True if the path exists and is accessible, False otherwise.
-    """
     try:
         return os.path.exists(path)
     except Exception:
@@ -45,14 +34,6 @@ def safe_exists(path: str) -> bool:
 
 
 def size_or_zero(path: str) -> int:
-    """
-    Safely retrieves the size of a file.
-
-    Args:
-        path (str): The file path.
-    Returns:
-        int: The size of the file in bytes, or 0 if the file cannot be read.
-    """
     try:
         return os.path.getsize(path)
     except Exception:
@@ -60,156 +41,246 @@ def size_or_zero(path: str) -> int:
 
 
 def safe_mtime(path: str) -> float:
-    """
-    Safely retrieves the last modification time of a file.
-
-    Args:
-        path (str): The file path.
-    Returns:
-        float: The modification timestamp, or 0 if the file cannot be read.
-    """
     try:
         return os.path.getmtime(path)
     except Exception:
         return 0
 
 
-# ── Disk I/O class ───────────────────────────────────────────────
+def same_drive(path_a: str, path_b: str) -> bool:
+    return os.path.splitdrive(os.path.abspath(path_a))[0].lower() == os.path.splitdrive(os.path.abspath(path_b))[0].lower()
+
 
 class DiskIO:
     """
-    Handles robust and safe file system operations, atomic copying, deletion, and directory cleanup. It includes retry mechanisms and Windows-specific API fallbacks to bypass strict file locks often caused by background iCloud syncing.
+    Handles atomic file writes, stable-file waits, and iCloud-aware copies.
     """
     def __init__(self, config, logger):
-        """
-        Initializes the DiskIO handler.
-
-        Args:
-            config (SyncConfig): The application configuration instance.
-            logger (SyncLogger): The logger instance for outputting I/O events.
-        """
         if platform.system() not in ("Windows", "Microsoft"):
             raise RuntimeError("Disk operations are only supported on Windows.")
+
         self.config = config
         self.log = logger
-        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
-        MoveFileExW = kernel32.MoveFileExW
-        MoveFileExW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD)
-        MoveFileExW.restype = wintypes.BOOL
-        SetFileAttributesW = kernel32.SetFileAttributesW
-        SetFileAttributesW.argtypes = (wintypes.LPCWSTR, wintypes.DWORD)
-        SetFileAttributesW.restype = wintypes.BOOL
+        self.icloud_checker = ICloudStatusChecker()
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self._set_file_attributes = kernel32.SetFileAttributesW
+        self._set_file_attributes.argtypes = (wintypes.LPCWSTR, wintypes.DWORD)
+        self._set_file_attributes.restype = wintypes.BOOL
+        self._move_file_ex = kernel32.MoveFileExW
+        self._move_file_ex.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD)
+        self._move_file_ex.restype = wintypes.BOOL
 
     def set_normal_attributes(self, path: str) -> bool:
-        """
-        Deletes read-only or hidden attributes from a file on Windows before attempting to forcefully replace or delete files that might have been locked or protected by external processes.
-
-        Args:
-            path (str): The file path to modify.
-        Returns:
-            bool: True if the operation succeeded or file doesn't exist, False on failure.
-        """
         try:
             if not os.path.exists(path):
                 return True
-            return bool(self._k32.SetFileAttributesW(str(path), FILE_ATTRIBUTE_NORMAL))
+            return bool(self._set_file_attributes(str(path), FILE_ATTRIBUTE_NORMAL))
         except Exception:
             return False
 
-    async def async_copy(self, src: str, dst: str, max_retries: int=12, initial_backoff: float=0.25):
-        """
-        The method copies the source to a `.tmp` file first, then replaces the target destination. If a PermissionError occurs (e.g., file lock), it retries with exponential backoff. If standard retries fail, it falls back to MoveFileExW and brute-force deletion.
+    def _replace_with_retries(
+        self,
+        tmp: str,
+        dst: str,
+        timeout_seconds: float = 30.0,
+        retry_seconds: float = 0.25,
+    ) -> None:
+        # Replace is used instead of writing dst in-place so readers never see partial bytes.
+        # Retries handle transient file locks from editors, AV, or cloud sync daemons.
+        deadline = time.time() + timeout_seconds
+        last_error = None
 
-        Args:
-            src (str): Source file path.
-            dst (str): Target destination file path.
-            max_retries (int, optional): Maximum number of retry attempts. Defaults to 12.
-            initial_backoff (float, optional): Initial wait time in seconds before retrying. Defaults to 0.25.
-        """
-        self.log.info("COPYING", f"{self.config.disp(src)} → {self.config.disp(dst)}", level="verbose")
-        ensure_dir(os.path.dirname(dst))
-        tmp = dst + ".tmp"
-
-        if os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-        try:
-            await asyncio.to_thread(shutil.copy2, src, tmp)
-        except Exception as e:
-            self.log.error("FAILED", f"Write tmp file {self.config.disp(tmp)}: {e}")
-            try:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-            except Exception:
-                pass
-            raise
-
-        backoff = initial_backoff
-        attempt = 0
-        while True:
+        while time.time() < deadline:
             try:
                 if os.path.exists(dst):
                     self.set_normal_attributes(dst)
                 os.replace(tmp, dst)
-                self.log.success("SUCCESS", f"Updated: {self.config.disp(dst)}", level="verbose")
                 return
-            except PermissionError:
-                attempt += 1
-                if attempt >= max_retries:
-                    # Win32 MoveFileEx fallback
-                    try:
-                        if MoveFileExW is None:
-                            self.log.error("FAILED", "MoveFileExW unavailable on this platform")
-                            raise PermissionError(f"Unable to replace {dst}")
-                        ok = MoveFileExW(tmp, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
-                        if ok:
-                            self.log.success("SUCCESS", f"MoveFileEx: {self.config.disp(dst)}", level="verbose")
-                            return
-                        self.log.error("FAILED", f"MoveFileEx (err {ctypes.get_last_error()})")
-                    except Exception as exc:
-                        self.log.error("DANGER", f"MoveFileEx exception: {exc}")
-                    # Final brute-force attempt
-                    try:
-                        if os.path.exists(dst):
+            except PermissionError as exc:
+                last_error = exc
+                time.sleep(retry_seconds)
 
-                            try:
-                                os.remove(dst)
-                            except FileNotFoundError:
-                                pass
-                        os.replace(tmp, dst)
-                        self.log.success("SUCCESS", f"Forced replace: {self.config.disp(dst)}", level="verbose")
-                        return
-                    except Exception as exc:
-                        self.log.error("FAILED", f"Final forced replace failed: {exc}")
-                        try:
-                            if os.path.exists(tmp):
-                                os.remove(tmp)
-                        except Exception:
-                            pass
-                        raise PermissionError(f"Unable to replace {dst}") from exc
+        try:
+            ok = self._move_file_ex(
+                tmp,
+                dst,
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+            if ok:
+                return
+        except Exception as exc:
+            last_error = exc
 
-                self.set_normal_attributes(dst)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 1.8, 5.0)
-            except Exception as unexpected:
-                self.log.error("DANGER", f"Unexpected error during replace: {unexpected}")
-                try:
-                    if os.path.exists(tmp):
-                        os.remove(tmp)
-                except Exception:
-                    pass
+        try:
+            if os.path.exists(dst):
+                os.remove(dst)
+            os.replace(tmp, dst)
+            return
+        except Exception as exc:
+            last_error = exc
+
+        raise PermissionError(f"Unable to replace {dst}") from last_error
+
+    def _staging_dir_for_destination(self, dst: str) -> str | None:
+        logs_dir = getattr(self.config, "logs_dir", "")
+        if not logs_dir:
+            return None
+        if not same_drive(logs_dir, dst):
+            return None
+        staging_dir = os.path.join(logs_dir, ".obsidian_sync_staging")
+        ensure_dir(staging_dir)
+        return staging_dir
+
+    def _copy_replace_sync(self, src: str, dst: str) -> None:
+        ensure_dir(os.path.dirname(dst))
+        staging_dir = self._staging_dir_for_destination(dst)
+        tmp = None
+        try:
+            if staging_dir is not None:
+                # Prefer logs-dir staging for all copy directions to avoid temp noise in vault folders.
+                fd, tmp = tempfile.mkstemp(dir=staging_dir, prefix="obsidian_sync_", suffix=".tmp")
+                os.close(fd)
+            else:
+                # Keep an atomic same-volume fallback when logs_dir is on another drive.
+                tmp = dst + ".tmp"
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+
+            shutil.copy2(src, tmp)
+            self._replace_with_retries(tmp, dst)
+        except Exception:
+            try:
+                if tmp and os.path.exists(tmp):
+                    os.remove(tmp)
+            finally:
                 raise
 
-    async def remove_file(self, path: str, description: str):
-        """
-        Asynchronously removes a file and cleans up empty parent directories.
+    def _copy_overwrite_with_retries(
+        self,
+        src: str,
+        dst: str,
+        timeout_seconds: float = 30.0,
+        retry_seconds: float = 0.25,
+    ) -> None:
+        # iCloud can interpret rename-style replacement as delete/create/move churn.
+        # For iCloud targets, prefer in-place overwrite with retries to reduce conflict-duplicate creation.
+        ensure_dir(os.path.dirname(dst))
+        deadline = time.time() + timeout_seconds
+        last_error = None
 
-        Args:
-            path (str): The file path to delete.
-            description (str): A descriptive label for the file (e.g., 'local', 'history') used in log outputs.
-        """
+        while time.time() < deadline:
+            try:
+                if os.path.exists(dst):
+                    self.set_normal_attributes(dst)
+                shutil.copy2(src, dst)
+                return
+            except PermissionError as exc:
+                last_error = exc
+                time.sleep(retry_seconds)
+
+        raise PermissionError(f"Unable to overwrite {dst}") from last_error
+
+    async def wait_for_stable_file(
+        self,
+        path: str,
+        stable_seconds: float = 0.5,
+        timeout_seconds: float = 30.0,
+        poll_seconds: float = 0.25,
+    ) -> bool:
+        deadline = time.time() + timeout_seconds
+        stable_since = None
+        previous = None
+
+        while time.time() < deadline:
+            try:
+                with open(path, "rb"):
+                    current = (os.path.getsize(path), os.path.getmtime(path))
+            except OSError:
+                stable_since = None
+                previous = None
+                await asyncio.sleep(poll_seconds)
+                continue
+
+            if current == previous:
+                if stable_since is None:
+                    stable_since = time.time()
+                if time.time() - stable_since >= stable_seconds:
+                    return True
+            else:
+                previous = current
+                stable_since = None
+
+            await asyncio.sleep(poll_seconds)
+
+        return False
+
+    async def copy_to_disk(self, src: str, dst: str) -> None:
+        self.log.info("copy_to_disk", f"{self.config.disp(src)} -> {self.config.disp(dst)}", level="verbose")
+        try:
+            await asyncio.to_thread(self._copy_replace_sync, src, dst)
+        except Exception as e:
+            self.log.error("FAILED", f"Copy {self.config.disp(src)} -> {self.config.disp(dst)}: {e}")
+            raise
+
+        if not await self.wait_for_stable_file(dst):
+            raise TimeoutError(f"Copied file did not become stable: {dst}")
+        self.log.success("SUCCESS", f"Updated: {self.config.disp(dst)}", level="verbose")
+
+    async def copy_to_icloud(self, src: str, dst: str) -> None:
+        self.log.info("copy_to_icloud", f"{self.config.disp(src)} -> {self.config.disp(dst)}", level="verbose")
+        try:
+            await asyncio.to_thread(self._copy_overwrite_with_retries, src, dst)
+        except Exception as e:
+            self.log.error("FAILED", f"Copy {self.config.disp(src)} -> {self.config.disp(dst)}: {e}")
+            raise
+
+        if not await self.wait_for_stable_file(dst):
+            raise TimeoutError(f"Copied file did not become stable: {dst}")
+        self.log.success("SUCCESS", f"Updated: {self.config.disp(dst)}", level="verbose")
+
+        # For iCloud targets, block completion until the daemon reports upload/sync is settled.
+        if not getattr(self.config, "check_icloud_status", True):
+            return
+        self.log.info("ICLOUD_WAIT", f"Waiting for iCloud to settle: {self.config.disp(dst)}", level="verbose")
+        stable_seconds = max(1.0, float(getattr(self.config, "stability_window", 0)))
+        if not await self.icloud_checker.wait_until_uploaded(
+            dst,
+            stable_seconds=stable_seconds,
+            on_update=lambda message: self.log.info(
+                "ICLOUD_TRACE",
+                f"{self.config.disp(dst)} :: {message}",
+                level="verbose",
+            ),
+        ):
+            raise TimeoutError(f"iCloud did not settle after copy: {dst}")
+        self.log.success("SUCCESS", f"iCloud settled: {self.config.disp(dst)}", level="verbose")
+
+    async def wait_for_icloud_readable(self, src: str) -> None:
+        if not getattr(self.config, "check_icloud_status", True):
+            return
+        self.log.info("ICLOUD_WAIT", f"Waiting for iCloud file: {self.config.disp(src)}", level="verbose")
+        stable_seconds = max(1.0, float(getattr(self.config, "stability_window", 0)))
+        if not await self.icloud_checker.wait_until_uploaded(
+            src,
+            stable_seconds=stable_seconds,
+            on_update=lambda message: self.log.info(
+                "ICLOUD_TRACE",
+                f"{self.config.disp(src)} :: {message}",
+                level="verbose",
+            ),
+        ):
+            raise TimeoutError(f"iCloud file is not ready to read: {src}")
+
+    async def copy_from_icloud(self, src: str, dst: str) -> None:
+        self.log.info("copy_from_icloud", f"{self.config.disp(src)} -> {self.config.disp(dst)}", level="verbose")
+        await self.wait_for_icloud_readable(src)
+        await self.copy_to_disk(src, dst)
+
+    async def async_copy(self, src: str, dst: str) -> None:
+        await self.copy_to_disk(src, dst)
+
+    async def remove_file(self, path: str, description: str):
         try:
             if not os.path.exists(path):
                 return
@@ -218,7 +289,7 @@ class DiskIO:
             except FileNotFoundError:
                 return
             self.log.success("SUCCESS", f"Removed {description}: {self.config.disp(path)}", level="verbose")
-            # Walk up and remove empty directories
+
             roots = {self.config.local_vault, self.config.icloud_vault, self.config.history_dir}
             dir_path = os.path.dirname(path)
             while dir_path and dir_path not in roots:
@@ -235,13 +306,6 @@ class DiskIO:
             self.log.error("FAILED", f"Remove {description} {path}: {e}")
 
     def remove_file_sync(self, path: str, description: str):
-        """
-        Synchronously removes a file (e.g., duplicate cleanup) before the main asyncio event loop begins.
-
-        Args:
-            path (str): The file path to delete.
-            description (str): A descriptive label for the log output.
-        """
         try:
             if os.path.exists(path):
                 os.remove(path)
@@ -250,12 +314,6 @@ class DiskIO:
             self.log.error("FAILED", f"Remove {description} {path}: {e}")
 
     async def create_conflict_duplicate(self, path: str):
-        """
-        Creates a backup duplicate of a file to prevent data loss during conflicts. Appends a timestamp suffix to the original filename (e.g., `file_CONFLICT_20260405_123045_123456.md`).
-
-        Args:
-            path (str): The original file path that is in conflict.
-        """
         base, ext = os.path.splitext(path)
         conflict = f"{base}_CONFLICT_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
         self.log.warn("WARNING", f"Creating conflict duplicate: {self.config.disp(conflict)}", level="verbose")

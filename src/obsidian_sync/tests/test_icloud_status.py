@@ -1,10 +1,12 @@
 import os
+import asyncio
 import pytest
 from unittest.mock import patch, MagicMock
 
 from conftest import (FILE_ATTRIBUTE_PINNED, FILE_ATTRIBUTE_OFFLINE, FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS,ICloudStatusChecker, ICloudSyncState)
+from obsidian_sync.icloud_status import ICloudFileSnapshot
 
-# ── Fixtures ──
+#  Fixtures
 
 @pytest.fixture
 def checker():
@@ -18,7 +20,7 @@ def checker():
     c._available = True
     return c
 
-# ── ICloudSyncState ──
+#  ICloudSyncState
 
 class TestSyncStateIsSafe:
     def test_local_is_safe(self):
@@ -42,7 +44,7 @@ class TestSyncStateIsSafe:
             assert isinstance(state.status, str)
             assert len(state.status) > 0
 
-# ── ICloudStatusChecker ──
+#  ICloudStatusChecker
 
 class TestDetect:
     def test_local_no_cloud_flags(self, checker):
@@ -78,7 +80,7 @@ class TestDetect:
             c = ICloudStatusChecker()
             assert c.detect("C:/fake/file.md") == ICloudSyncState.UNKNOWN
 
-# ── Is Safe ──
+#  Is Safe
 
 class TestIsSafe:
     def test_local_is_safe(self, checker):
@@ -105,6 +107,47 @@ class TestIsSafe:
         with patch("platform.system", return_value="Darwin"):
             c = ICloudStatusChecker()
             assert c.is_safe("C:/fake/file.md") is True
+
+
+class TestWaitUntilUploaded:
+    @pytest.mark.asyncio
+    async def test_waits_for_pending_to_clear_before_success(self, checker):
+        pending = ICloudFileSnapshot(
+            state=ICloudSyncState.LOCAL,
+            size_logical=10,
+            size_on_disk=10,
+            mtime_ns=100,
+            shell_status="Sync pending",
+        )
+        settled = ICloudFileSnapshot(
+            state=ICloudSyncState.LOCAL,
+            size_logical=10,
+            size_on_disk=10,
+            mtime_ns=100,
+            shell_status="Available on this device",
+        )
+
+        snapshots = [pending, settled, settled, settled]
+
+        def fake_snapshot(_path):
+            if snapshots:
+                return snapshots.pop(0)
+            return settled
+
+        checker.snapshot = MagicMock(side_effect=fake_snapshot)
+        updates: list[str] = []
+
+        ok = await checker.wait_until_uploaded(
+            "C:/fake/file.md",
+            stable_seconds=0.01,
+            poll_seconds=0.01,
+            timeout_seconds=0.2,
+            on_update=updates.append,
+        )
+
+        assert ok is True
+        assert any("pending=True" in update for update in updates)
+        assert updates[-1].startswith("settled after")
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

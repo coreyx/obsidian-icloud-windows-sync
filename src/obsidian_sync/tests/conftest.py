@@ -13,6 +13,7 @@ MODULE_FILES = {
     "hasher": "hasher.py",
     "duplicates": "duplicates.py",
     "sync_engine": "sync_engine.py",
+    "sync_worker": "sync_worker.py",
     "icloud_status": "icloud_status.py",
 }
 PKG = "obsidian_sync"
@@ -53,7 +54,7 @@ def _load(sub):
             return stub
     return mod
 
-_mods = {s: _load(s) for s in ("config","logger","disk_io","hasher","duplicates","icloud_status","sync_engine")}
+_mods = {s: _load(s) for s in ("config","logger","icloud_status","disk_io","hasher","duplicates","sync_worker","sync_engine")}
 
 def _get(mn, attr):
     m = _mods.get(mn)
@@ -75,6 +76,7 @@ ensure_dir = _get("disk_io", "ensure_dir")
 FileHasher = _get("hasher", "FileHasher")
 DuplicateScanner = _get("duplicates", "DuplicateScanner")
 SyncEngine = _get("sync_engine", "SyncEngine")
+FileSynchronizer = _get("sync_worker", "FileSynchronizer")
 ICloudStatusChecker = _get("icloud_status","ICloudStatusChecker")
 ICloudSyncState = _get("icloud_status","ICloudSyncState")
 
@@ -138,4 +140,4 @@ def eng(cfg, mock_log):
     with patch("platform.system", return_value="Windows", create=True):
         io = DiskIO(cfg, mock_log)
     h = FileHasher(cfg, mock_log); h.state = {}
-    return SyncEngine(cfg, mock_log, h, io, MagicMock())
+    return FileSynchronizer(cfg, mock_log, h, io, MagicMock())

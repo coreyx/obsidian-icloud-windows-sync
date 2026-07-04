@@ -132,7 +132,7 @@ class FileHasher:
             if cached['mtime'] == mtime and cached['size'] == size:
                 return cached['hash']
 
-        # Cache miss — hash from disk
+        # Cache miss  hash from disk
         h = await self.hash_file(path)
         if h is None:
             return None
