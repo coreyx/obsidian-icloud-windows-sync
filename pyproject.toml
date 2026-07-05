@@ -22,4 +22,4 @@ dependencies = [
 obsidian-sync = "obsidian_sync.__main__:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+include = ["obsidian_sync*"]

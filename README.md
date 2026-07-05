@@ -36,7 +36,7 @@ A highly optimized, asynchronous, three-way sync engine designed to solve the no
 ## Project Structure
 
 ```
-src/obsidian_sync/
+obsidian_sync/
 ├── __main__.py      # CLI entry point
 ├── config.py        # YAML config loading & validation
 ├── logger.py        # Structured logging (console + file)

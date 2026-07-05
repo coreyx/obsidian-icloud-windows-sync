@@ -291,7 +291,7 @@ class TestTinyFiles:
 
 class TestPerFileQueue:
     @pytest.mark.asyncio
-    async def test_coalesces_duplicate_events_while_worker_busy(self, engine):
+    async def test_drains_duplicate_events_while_worker_busy(self, engine):
         gate = asyncio.Event()
         started = asyncio.Event()
 
@@ -307,11 +307,13 @@ class TestPerFileQueue:
         engine.enqueue_file_event(FileSyncEvent("modified", "note.md"))
         engine.enqueue_file_event(FileSyncEvent("modified", "note.md"))
 
-        assert engine.file_queues["note.md"].qsize() == 1
+        # Now both events are in queue
+        assert engine.file_queues["note.md"].qsize() == 2
 
         gate.set()
         await asyncio.wait_for(engine.file_queues["note.md"].join(), timeout=1)
 
+        # Worker processes once more and drains pending events
         assert engine.synchronizer.sync_wrapper.await_count == 2
 
 
@@ -327,17 +329,6 @@ class TestWatcherScopeAndSuppression:
             assert os.path.abspath(cfg.local_vault) in scheduled_roots
             assert os.path.abspath(cfg.icloud_vault) in scheduled_roots
             assert os.path.abspath(cfg.history_dir) not in scheduled_roots
-
-    def test_suppressed_path_event_is_ignored(self, engine, cfg):
-        loop = MagicMock()
-        loop.is_closed.return_value = False
-        engine.loop = loop
-        cfg.cooldown_seconds = 5
-        engine.suppress_path_events("note.md", cfg.local_vault)
-
-        engine.enqueue_path_event("modified", _local(cfg, "note.md"), cfg.local_vault)
-
-        loop.call_soon_threadsafe.assert_not_called()
 
 
 #  push_to_icloud / restore_from_icloud

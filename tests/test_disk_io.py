@@ -162,10 +162,9 @@ class TestAsyncCopy:
         replace_mock.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_copy_to_disk_stages_in_logs_dir_when_same_drive(self, cfg, tmp_path, mock_log):
+    async def test_copy_to_disk_uses_tmp_file_next_to_destination(self, cfg, tmp_path, mock_log):
         src = tmp_path / "src.md"; src.write_text("data")
         dst = tmp_path / "history" / "note.md"
-        cfg.logs_dir = str(tmp_path / "logs")
         with patch("platform.system", return_value="Windows"):
             dio = DiskIO(cfg, mock_log)
 
@@ -183,7 +182,7 @@ class TestAsyncCopy:
         assert dst.exists()
         assert dst.read_text() == "data"
         assert observed["dst"] == str(dst)
-        assert os.path.dirname(observed["tmp"]) == os.path.join(cfg.logs_dir, ".obsidian_sync_staging")
+        assert observed["tmp"] == str(dst) + ".tmp"
 
 #  Remove File
 

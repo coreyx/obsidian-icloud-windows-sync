@@ -122,36 +122,17 @@ class DiskIO:
 
         raise PermissionError(f"Unable to replace {dst}") from last_error
 
-    def _staging_dir_for_destination(self, dst: str) -> str | None:
-        logs_dir = getattr(self.config, "logs_dir", "")
-        if not logs_dir:
-            return None
-        if not same_drive(logs_dir, dst):
-            return None
-        staging_dir = os.path.join(logs_dir, ".obsidian_sync_staging")
-        ensure_dir(staging_dir)
-        return staging_dir
-
     def _copy_replace_sync(self, src: str, dst: str) -> None:
         ensure_dir(os.path.dirname(dst))
-        staging_dir = self._staging_dir_for_destination(dst)
-        tmp = None
+        tmp = dst + ".tmp"
         try:
-            if staging_dir is not None:
-                # Prefer logs-dir staging for all copy directions to avoid temp noise in vault folders.
-                fd, tmp = tempfile.mkstemp(dir=staging_dir, prefix="obsidian_sync_", suffix=".tmp")
-                os.close(fd)
-            else:
-                # Keep an atomic same-volume fallback when logs_dir is on another drive.
-                tmp = dst + ".tmp"
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-
+            if os.path.exists(tmp):
+                os.remove(tmp)
             shutil.copy2(src, tmp)
             self._replace_with_retries(tmp, dst)
         except Exception:
             try:
-                if tmp and os.path.exists(tmp):
+                if os.path.exists(tmp):
                     os.remove(tmp)
             finally:
                 raise

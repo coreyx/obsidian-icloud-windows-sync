@@ -30,7 +30,6 @@ class FileSynchronizer:
         self.io = disk_io
         self.duplicates = duplicates
         self.io_semaphore = asyncio.Semaphore(self.config.max_concurrent_io)
-        self.engine = None
 
     async def _copy_via_staging(self, source: str, destinations: list[tuple[str, str]], source_is_icloud: bool = False):
         staging_root = os.path.join(self.config.logs_dir, ".obsidian_sync_staging")
@@ -71,8 +70,6 @@ class FileSynchronizer:
         local = os.path.join(self.config.local_vault, rel)
         icloud = os.path.join(self.config.icloud_vault, rel)
         history = os.path.join(self.config.history_dir, rel)
-        if self.engine is not None:
-            self.engine.suppress_path_events(rel, self.config.local_vault, self.config.icloud_vault)
         await self._copy_via_staging(
             source=local,
             destinations=[("icloud", icloud), ("disk", history)],
@@ -89,8 +86,6 @@ class FileSynchronizer:
         local = os.path.join(self.config.local_vault, rel)
         icloud = os.path.join(self.config.icloud_vault, rel)
         history = os.path.join(self.config.history_dir, rel)
-        if self.engine is not None:
-            self.engine.suppress_path_events(rel, self.config.local_vault, self.config.icloud_vault)
         await self._copy_via_staging(
             source=icloud,
             destinations=[("disk", local), ("disk", history)],
@@ -125,8 +120,8 @@ class FileSynchronizer:
             rel_path (str): The relative file path to synchronize.
         """
         cfg = self.config
-        if cfg.stability_window > 0:
-            await asyncio.sleep(cfg.stability_window)
+        # if cfg.stability_window > 0:
+        #     await asyncio.sleep(cfg.stability_window)
 
         local = os.path.join(cfg.local_vault, rel_path)
         icloud = os.path.join(cfg.icloud_vault, rel_path)

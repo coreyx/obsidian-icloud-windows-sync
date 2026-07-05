@@ -5,7 +5,7 @@ import warnings
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-SOURCE_FILES_DIR = Path(__file__).parent.parent
+SOURCE_FILES_DIR = Path(__file__).parent.parent / "obsidian_sync"
 MODULE_FILES = {
     "config": "config.py",
     "logger": "logger.py",
@@ -104,14 +104,10 @@ def cfg(tmp_path):
     c.history_dir = str(tmp_path / "history")
     c.logs_dir = str(tmp_path / "logs")
     c.run_continuously = False
-    c.user_interface = False
     c.check_icloud_status = True
     c.poll_interval = 2
     c.stability_window = 0
     c.stabilize_wait = 0
-    c.cooldown_seconds = 0
-    c.big_file_cooldown = 0
-    c.big_file_threshold = 100 * 1024
     c.tiny_threshold = 8
     c.max_concurrent_io = 50
     c.console_level = "quiet"

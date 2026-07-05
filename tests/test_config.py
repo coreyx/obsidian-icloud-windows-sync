@@ -21,11 +21,9 @@ def valid_yaml(tmp_path):
         },
         "sync": {
             "run_continuously": True,
-            "user_interface": False,
             "check_icloud_status": True,
             "poll_interval": 5,
             "stability_window": 3,
-            "check_icloud_status": True,
         },
         "logging": {
             "console_level": "verbose"
@@ -49,7 +47,7 @@ class TestFromYaml:
         assert cfg.poll_interval == 5
         assert cfg.stability_window == 3
         assert cfg.console_level == "verbose"
-        assert cfg.user_interface is False
+
         assert cfg.check_icloud_status is True
         assert "*.tmp" in cfg.ignore_patterns
 

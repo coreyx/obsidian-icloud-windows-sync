@@ -19,14 +19,10 @@ class SyncConfig:
     logs_dir: str = ""
     # Sync
     run_continuously: bool = True
-    user_interface: bool = True
     check_icloud_status: bool = True
     poll_interval: int = 2
     stability_window: int = 3
     stabilize_wait: int = 8
-    cooldown_seconds: int = 3
-    big_file_cooldown: int = 30
-    big_file_threshold: int = 100 * 1024
     tiny_threshold: int = 8
     max_concurrent_io: int = 50
     # Logging
@@ -72,14 +68,10 @@ class SyncConfig:
             history_dir=paths.get("history_dir", ""),
             logs_dir=paths.get("logs_dir", ""),
             run_continuously=sync.get("run_continuously", True),
-            user_interface=sync.get("user_interface", True),
             check_icloud_status=sync.get("check_icloud_status", True),
             poll_interval=sync.get("poll_interval", 2),
             stability_window=sync.get("stability_window", 3),
             stabilize_wait=sync.get("stabilize_wait", 8),
-            cooldown_seconds=sync.get("cooldown_seconds", 3),
-            big_file_cooldown=sync.get("big_file_cooldown", 30),
-            big_file_threshold=sync.get("big_file_threshold", 100 * 1024),
             tiny_threshold=sync.get("tiny_threshold", 8),
             max_concurrent_io=sync.get("max_concurrent_io", 50),
             console_level=logging_cfg.get("console_level", "normal"),

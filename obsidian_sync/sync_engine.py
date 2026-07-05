@@ -54,9 +54,7 @@ class SyncEngine:
         self.file_queues: dict[str, asyncio.Queue[FileSyncEvent]] = {}
         self.file_workers: dict[str, asyncio.Task] = {}
         self.active_tasks: set[str] = set()
-        self._suppressed_events: dict[tuple[str, str], float] = {}
         self.loop: asyncio.AbstractEventLoop | None = None
-        self.synchronizer.engine = self
 
     def root_label(self, root: str) -> str:
         norm_root = os.path.normcase(os.path.abspath(root))
@@ -122,18 +120,6 @@ class SyncEngine:
             return
         if self.loop is None or self.loop.is_closed():
             return
-        suppress_key = (os.path.normcase(os.path.abspath(root)), os.path.normcase(rel))
-        suppressed_until = self._suppressed_events.get(suppress_key)
-        if suppressed_until is not None:
-            now = time.monotonic()
-            if now < suppressed_until:
-                self.log.info(
-                    "FS_EVENT",
-                    f"Suppressed self-generated {event_type} for {self.config.disp(rel)}",
-                    level="verbose",
-                )
-                return
-            del self._suppressed_events[suppress_key]
         root_name = self.root_label(root)
         self.log.info(
             "FS_EVENT",
@@ -144,16 +130,6 @@ class SyncEngine:
             self.enqueue_file_event,
             FileSyncEvent(event_type, rel),
         )
-
-    def suppress_path_events(self, rel_path: str, *roots: str):
-        cooldown = max(0.0, float(getattr(self.config, "cooldown_seconds", 0)))
-        until = time.monotonic() + cooldown
-        norm_rel = os.path.normcase(os.path.normpath(rel_path))
-        for root in roots:
-            if not root:
-                continue
-            key = (os.path.normcase(os.path.abspath(root)), norm_rel)
-            self._suppressed_events[key] = until
 
     def enqueue_file_event(self, event: FileSyncEvent):
         queue = self.file_queues.get(event.rel_path)
@@ -167,14 +143,6 @@ class SyncEngine:
                 self.file_worker(event.rel_path)
             )
 
-        if queue.qsize() > 0:
-            self.log.info(
-                "QUEUE",
-                f"Coalesced duplicate {event.event_type} for {self.config.disp(event.rel_path)}; pending={queue.qsize()}",
-                level="verbose",
-            )
-            return
-
         queue.put_nowait(event)
         state = "active" if event.rel_path in self.active_tasks else "idle"
         self.log.info(
@@ -187,20 +155,37 @@ class SyncEngine:
         queue = self.file_queues[rel_path]
         while True:
             event = await queue.get()
+            pending_count = queue.qsize()
+            
+            # Drain all pending events since we'll sync current state anyway
+            while not queue.empty():
+                try:
+                    queue.get_nowait()
+                    queue.task_done()
+                except asyncio.QueueEmpty:
+                    break
+            
             self.active_tasks.add(rel_path)
             try:
-                self.log.info(
-                    "QUEUE",
-                    f"Starting {event.event_type} sync for {self.config.disp(rel_path)}; remaining={queue.qsize()}",
-                    level="verbose",
-                )
+                if pending_count > 0:
+                    self.log.info(
+                        "QUEUE",
+                        f"Starting {event.event_type} sync for {self.config.disp(rel_path)}; drained {pending_count} pending events",
+                        level="verbose",
+                    )
+                else:
+                    self.log.info(
+                        "QUEUE",
+                        f"Starting {event.event_type} sync for {self.config.disp(rel_path)}",
+                        level="verbose",
+                    )
                 await self.synchronizer.sync_wrapper(event.rel_path)
             finally:
                 self.active_tasks.discard(rel_path)
                 queue.task_done()
                 self.log.info(
                     "QUEUE",
-                    f"Finished {event.event_type} sync for {self.config.disp(rel_path)}; remaining={queue.qsize()}",
+                    f"Finished {event.event_type} sync for {self.config.disp(rel_path)}",
                     level="verbose",
                 )
 
