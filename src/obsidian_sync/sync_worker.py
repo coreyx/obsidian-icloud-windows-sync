@@ -1,6 +1,7 @@
 import os
 import asyncio
 import traceback
+import tempfile
 
 from colorama import Fore
 
@@ -31,6 +32,33 @@ class FileSynchronizer:
         self.io_semaphore = asyncio.Semaphore(self.config.max_concurrent_io)
         self.engine = None
 
+    async def _copy_via_staging(self, source: str, destinations: list[tuple[str, str]], source_is_icloud: bool = False):
+        staging_root = os.path.join(self.config.logs_dir, ".obsidian_sync_staging")
+        ensure_dir(staging_root)
+        fd, staged = tempfile.mkstemp(dir=staging_root, prefix="snapshot_", suffix=".tmp")
+        os.close(fd)
+
+        try:
+            if source_is_icloud:
+                await self.io.copy_from_icloud(source, staged)
+            else:
+                await self.io.copy_to_disk(source, staged)
+
+            for method, destination in destinations:
+                if method == "icloud":
+                    await self.io.copy_to_icloud(staged, destination)
+                else:
+                    await self.io.copy_to_disk(staged, destination)
+        finally:
+            try:
+                if os.path.exists(staged):
+                    await asyncio.to_thread(os.remove, staged)
+            except Exception as e:
+                self.log.warn("STAGING", f"Failed to remove staging file {self.config.disp(staged)}: {e}", level="verbose")
+
+    async def restore_to_icloud(self, rel: str):
+        await self.push_to_icloud(rel)
+
     # Core file operations
 
     async def push_to_icloud(self, rel: str):
@@ -45,8 +73,11 @@ class FileSynchronizer:
         history = os.path.join(self.config.history_dir, rel)
         if self.engine is not None:
             self.engine.suppress_path_events(rel, self.config.local_vault, self.config.icloud_vault)
-        await self.io.copy_to_icloud(local, icloud)
-        await self.io.copy_to_disk(local, history)
+        await self._copy_via_staging(
+            source=local,
+            destinations=[("icloud", icloud), ("disk", history)],
+            source_is_icloud=False,
+        )
 
     async def restore_from_icloud(self, rel: str):
         """
@@ -60,8 +91,11 @@ class FileSynchronizer:
         history = os.path.join(self.config.history_dir, rel)
         if self.engine is not None:
             self.engine.suppress_path_events(rel, self.config.local_vault, self.config.icloud_vault)
-        await self.io.copy_from_icloud(icloud, local)
-        await self.io.copy_from_icloud(icloud, history)
+        await self._copy_via_staging(
+            source=icloud,
+            destinations=[("disk", local), ("disk", history)],
+            source_is_icloud=True,
+        )
 
     # Per-file sync logic
 

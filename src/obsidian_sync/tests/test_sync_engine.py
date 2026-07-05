@@ -361,7 +361,7 @@ class TestPushRestore:
     async def test_restore_uses_icloud_read_guard(self, eng, cfg):
         eng.io.copy_from_icloud = AsyncMock()
         await eng.restore_from_icloud("guarded.md")
-        assert eng.io.copy_from_icloud.call_count == 2
+        assert eng.io.copy_from_icloud.call_count == 1
 
 #  sync_wrapper
 
