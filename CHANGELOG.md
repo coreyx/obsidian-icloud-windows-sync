@@ -1,10 +1,37 @@
 # Changelog
 
+## [1.2.0] - 2026-07-05
+
+### Summary
+- iCloud duplicates fixed that occured due to multiple files being created rapidly.
+- Per-file event queue architecture for better isolation and race condition prevention
+- Atomic snapshot propagation eliminates intermediate state inconsistencies
+- Simplified event processing with drain-all pattern
+- Project restructured to flat layout (removed src/ directory)
+
+### Added
+- Per-file worker pattern: dedicated `asyncio.Queue` and worker task for each file path
+- Atomic snapshot propagation via `_copy_via_staging()`: single source read → temp file → fan out to all destinations
+- Drain-all queue pattern in `file_worker()`: processes all pending events at iteration start to avoid missing intermediate changes
+
+### Changed
+- Filesystem observers now only watch `local_vault` and `icloud_vault` (removed `history_dir` as it's output-only)
+- Simplified `disk_io._copy_replace_sync()`: uses simple `dst + ".tmp"` pattern instead of complex staging directory logic
+- Event handling now processes all queued events without coalescing or suppression
+- Project structure: moved `obsidian_sync/` and `tests/` to root level (removed `src/` directory)
+- Updated `pyproject.toml` with explicit package discovery for flat layout
+
+
+### Fixed
+- Race conditions during rapid iPhone edits that caused text truncation
+- Self-generated disk I/O events no longer re-trigger sync loops
+- Dual source reads during push/pull operations that could capture inconsistent states
+
 ## [1.1.0] - 2026-04-09
 
 ### Summary
 - File duplicate protection added via kernel32
-- Added tests `./src/obsidian_sync/tests`
+- Added tests `./tests/`
 
 ### Added
 - `ICloudStatusChecker` reads Windows file attributes via `GetFileAttributesW` (kernel32) to determine iCloud sync state
