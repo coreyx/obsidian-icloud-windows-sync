@@ -4,7 +4,7 @@ import yaml
 from unittest.mock import patch, mock_open
 from conftest import SyncConfig
 
-# ── Fixtures ──
+#  Fixtures
 
 @pytest.fixture
 def valid_yaml(tmp_path):
@@ -21,11 +21,9 @@ def valid_yaml(tmp_path):
         },
         "sync": {
             "run_continuously": True,
-            "user_interface": False,
             "check_icloud_status": True,
             "poll_interval": 5,
             "stability_window": 3,
-            "check_icloud_status": True,
         },
         "logging": {
             "console_level": "verbose"
@@ -40,7 +38,7 @@ def valid_yaml(tmp_path):
     path.write_text(yaml.dump(data))
     return path, data, tmp_path
 
-# ── from_yaml ──
+#  from_yaml
 
 class TestFromYaml:
     def test_loads_valid_yaml(self, valid_yaml):
@@ -49,7 +47,7 @@ class TestFromYaml:
         assert cfg.poll_interval == 5
         assert cfg.stability_window == 3
         assert cfg.console_level == "verbose"
-        assert cfg.user_interface is False
+
         assert cfg.check_icloud_status is True
         assert "*.tmp" in cfg.ignore_patterns
 
@@ -95,7 +93,7 @@ class TestFromYaml:
         cfg = SyncConfig.from_yaml(str(path))
         assert cfg.run_continuously is True
 
-# ── validate ──
+#  validate
 
 class TestValidate:
     def test_valid_config_no_errors(self, cfg):
@@ -152,7 +150,7 @@ class TestValidate:
     def test_returns_empty_for_perfect_config(self, cfg):
         assert cfg.validate() == []
 
-# ── is_ignored ──
+#  is_ignored
 
 class TestIsIgnored:
     def test_exact_match(self, cfg):
@@ -185,7 +183,7 @@ class TestIsIgnored:
         cfg.ignore_patterns = []
         assert cfg.is_ignored("anything.md") is False
 
-# ── disp ──
+#  disp
 
 class TestDisp:
     def test_short_path_unchanged(self, cfg):
@@ -218,7 +216,7 @@ class TestDisp:
         p = "/some/absolute/path.md"
         assert cfg.disp(p) == p
 
-# ── min_seed_size ──
+#  min_seed_size
 
 class TestMinSeedSize:
     def test_obsidian_settings_allow_1_byte(self, cfg):
@@ -233,7 +231,7 @@ class TestMinSeedSize:
         cfg.tiny_threshold = 8
         assert cfg.min_seed_size(".obsidian/plugins/x/data.json") == 1
 
-# ── state_file_path ──
+#  state_file_path
 
 class TestStateFilePath:
     def test_returns_path_in_logs_dir(self, cfg):

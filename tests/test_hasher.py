@@ -7,7 +7,7 @@ import aiofiles
 from unittest.mock import patch, MagicMock, AsyncMock
 from conftest import FileHasher
 
-# ── Load State ──
+#  Load State
 
 class TestLoadState:
     def test_empty_state_if_no_file(self, hasher):
@@ -36,7 +36,7 @@ class TestLoadState:
         hasher.load_state()
         assert os.path.exists(path + ".corrupt")
 
-# ── Save State ──
+#  Save State
 
 class TestSaveState:
     def test_saves_state_to_file(self, hasher, cfg):
@@ -68,7 +68,7 @@ class TestSaveState:
             args = mock_replace.call_args[0]
             assert args[0].endswith(".tmp")
 
-# ── Hash File ──
+#  Hash File
 
 class TestHashFile:
     @pytest.mark.asyncio
@@ -108,7 +108,7 @@ class TestHashFile:
             result = await hasher.hash_file(str(f))
         assert result is None
 
-# ── Get Cached Hash ──
+#  Get Cached Hash
 
 class TestGetCachedHash:
     def _put_cache(self, hasher, rel, side, mtime, size, hash_val):

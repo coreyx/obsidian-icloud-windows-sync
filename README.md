@@ -36,14 +36,16 @@ A highly optimized, asynchronous, three-way sync engine designed to solve the no
 ## Project Structure
 
 ```
-src/obsidian_sync/
+obsidian_sync/
 ├── __main__.py      # CLI entry point
 ├── config.py        # YAML config loading & validation
 ├── logger.py        # Structured logging (console + file)
 ├── disk_io.py       # Atomic copy, delete, Windows API
 ├── hasher.py        # SHA-256 hashing with mtime/size cache
+├── icloud_status.py # Windows file attributes for iCloud sync state
 ├── duplicates.py    # Startup duplicate/conflict scanner
-└── sync_engine.py   # Main loop + three-way sync logic
+├── sync_engine.py   # File watchers + per-file event queues
+└── sync_worker.py   # Three-way sync logic with atomic operations
 ```
 
 ### Modes of Operation
@@ -93,9 +95,10 @@ Each sync pass walks the union of all three directories and applies these rules:
 
 ### Key Protections
 
+- **Per-file event queues**: each file has dedicated queue and worker task for complete isolation
+- **Atomic snapshot propagation**: single source read to temp file, then fan out to all destinations
 - **Stabilization** (`stability_window`): waits before acting on creates/deletes to avoid reacting to mid-save or rename workflows
 - **Conflict wait** (`stabilize_wait`): longer wait on both-changed scenarios to detect still-active edits
-- **Cooldowns**: skips recently synced files to prevent autosave thrash; longer for large files (`big_file_cooldown`)
 - **Atomic writes**: write to `.tmp` then `os.replace()`, with retries and Win32 `MoveFileEx` fallback
 - **Conflict duplicates**: losing side saved as `filename_CONFLICT_TIMESTAMP.ext` before overwrite
 
@@ -109,6 +112,6 @@ All settings live in `config.yaml`:
 |---|---|---|
 | `stability_window` | `3s` | Increase for slow disks or large files |
 | `stabilize_wait` | `8s` | Increase if you edit very slowly |
-| `cooldown_seconds` | `3s` | Increase if autosave causes loops |
-| `big_file_threshold` | `100KB` | Files above this get `big_file_cooldown` |
+| `tiny_threshold` | `8 bytes` | Minimum file size to sync (prevents empty/placeholder files) |
+| `max_concurrent_io` | `50` | Maximum concurrent I/O operations |
 | `ignore.patterns` | `[]` | Exclude folders like `.obsidian/cache` |

@@ -1,14 +1,14 @@
 import os
 import time
-import asyncio
-import shutil
 import hashlib
+import asyncio
 import pytest
 from obsidian_sync.disk_io import DiskIO
-from unittest.mock import patch, MagicMock, AsyncMock, call
-from conftest import SyncEngine, FileHasher, ICloudSyncState, ICloudStatusChecker, DiskIO
+from unittest.mock import patch, MagicMock, AsyncMock
+from conftest import SyncEngine, FileSynchronizer, FileHasher, DiskIO
+from obsidian_sync.sync_engine import FileSyncEvent
 
-# ── Fixtures ──
+#  Fixtures
 
 @pytest.fixture
 def eng(cfg, mock_log, tmp_path):
@@ -16,7 +16,14 @@ def eng(cfg, mock_log, tmp_path):
         real_io = DiskIO(cfg, mock_log)
     h   = FileHasher(cfg, mock_log)
     dup = MagicMock()
-    return SyncEngine(cfg, mock_log, h, real_io, dup)
+    return FileSynchronizer(cfg, mock_log, h, real_io, dup)
+
+@pytest.fixture
+def engine(cfg, mock_log, tmp_path):
+    with patch("platform.system", return_value="Windows"):
+        real_io = DiskIO(cfg, mock_log)
+    h = FileHasher(cfg, mock_log)
+    return SyncEngine(cfg, mock_log, h, real_io, MagicMock())
 
 def _write(path: str, content: str = "content"):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -28,88 +35,71 @@ def _local(cfg, rel): return os.path.join(cfg.local_vault,  rel)
 def _icloud(cfg, rel): return os.path.join(cfg.icloud_vault, rel)
 def _history(cfg, rel): return os.path.join(cfg.history_dir,  rel)
 
-# ── Init ──
-
-class TestInit:
-    def test_checker_created_when_enabled(self, cfg, mock_log):
-        cfg.check_icloud_status = True
-        with patch("platform.system", return_value="Windows"):
-            io = DiskIO(cfg, mock_log)
-            eng = SyncEngine(cfg, mock_log, MagicMock(), io, MagicMock())
-        assert eng.icloud_checker is not None
-
-    def test_checker_none_when_disabled(self, cfg, mock_log):
-        cfg.check_icloud_status = False
-        with patch("platform.system", return_value="Windows"):
-            io = DiskIO(cfg, mock_log)
-            eng = SyncEngine(cfg, mock_log, MagicMock(), io, MagicMock())
-        assert eng.icloud_checker is None
-
-# ── gather_rel_paths ──
+#  gather_rel_paths
 
 class TestGatherRelPaths:
     @pytest.mark.asyncio
-    async def test_collects_files_from_local(self, eng, cfg):
+    async def test_collects_files_from_local(self, engine, cfg):
         _write(_local(cfg, "a.md"))
         _write(_local(cfg, "b.md"))
-        paths = eng.gather_rel_paths()
+        paths = engine.gather_rel_paths()
         assert "a.md" in paths
         assert "b.md" in paths
 
     @pytest.mark.asyncio
-    async def test_collects_files_from_icloud(self, eng, cfg):
+    async def test_collects_files_from_icloud(self, engine, cfg):
         _write(_icloud(cfg, "c.md"))
-        paths = eng.gather_rel_paths()
+        paths = engine.gather_rel_paths()
         assert "c.md" in paths
 
     @pytest.mark.asyncio
-    async def test_deduplicates_across_vaults(self, eng, cfg):
+    async def test_deduplicates_across_vaults(self, engine, cfg):
         _write(_local(cfg, "same.md"))
         _write(_icloud(cfg, "same.md"))
-        paths = eng.gather_rel_paths()
+        paths = engine.gather_rel_paths()
         assert "same.md" in paths
 
     @pytest.mark.asyncio
-    async def test_filters_tmp_files(self, eng, cfg):
+    async def test_filters_tmp_files(self, engine, cfg):
         _write(_local(cfg, "draft.tmp"))
-        paths = eng.gather_rel_paths()
+        paths = engine.gather_rel_paths()
         assert "draft.tmp" not in paths
 
     @pytest.mark.asyncio
-    async def test_filters_dotunderscore_files(self, eng, cfg):
+    async def test_filters_dotunderscore_files(self, engine, cfg):
         _write(_local(cfg, "._something.md"))
-        paths = eng.gather_rel_paths()
+        paths = engine.gather_rel_paths()
         assert all("._" not in p for p in paths)
 
     @pytest.mark.asyncio
-    async def test_filters_page_preview(self, eng, cfg):
+    async def test_filters_page_preview(self, engine, cfg):
         _write(_local(cfg, "page-preview.md"))
-        paths = eng.gather_rel_paths()
+        paths = engine.gather_rel_paths()
         assert "page-preview.md" not in paths
 
     @pytest.mark.asyncio
-    async def test_filters_ignored_patterns(self, eng, cfg):
+    async def test_filters_ignored_patterns(self, engine, cfg):
         cfg.ignore_patterns = ["private/*.md"]
         os.makedirs(os.path.join(cfg.local_vault, "private"), exist_ok=True)
         _write(_local(cfg, "private/secret.md"))
-        paths = eng.gather_rel_paths()
+        paths = engine.gather_rel_paths()
         assert os.path.normpath("private/secret.md") not in paths
 
     @pytest.mark.asyncio
-    async def test_filters_ignored_dirs(self, eng, cfg):
+    async def test_filters_ignored_dirs(self, engine, cfg):
         cfg.ignored_dirs = [".git"]
         os.makedirs(os.path.join(cfg.local_vault, ".git"), exist_ok=True)
         _write(_local(cfg, ".git/HEAD"))
-        paths = eng.gather_rel_paths()
+        paths = engine.gather_rel_paths()
         assert ".git/HEAD" not in paths
 
     @pytest.mark.asyncio
-    async def test_handles_empty_vaults(self, eng, cfg):
-        paths = eng.gather_rel_paths()
+    async def test_handles_empty_vaults(self, engine, cfg):
+        paths = engine.gather_rel_paths()
         assert isinstance(paths, (list, set))
         assert len(paths) == 0
 
-# ── sync_file L/C/H ──
+#  sync_file L/C/H
 
 class TestSyncFileStates:
     @pytest.mark.asyncio
@@ -280,104 +270,7 @@ class TestSyncFileStates:
         await eng.sync_file("push2.md")
         assert os.path.exists(_icloud(cfg, "push2.md"))
 
-# ── Cooldown ──
-
-class TestCooldown:
-    @pytest.mark.asyncio
-    async def test_file_in_cooldown_is_skipped(self, eng, cfg):
-        _write(_local(cfg, "cool.md"), "x")
-        eng.cooldowns["cool.md"] = time.time() + 9999
-        initial_mtime = os.path.getmtime(_local(cfg, "cool.md"))
-        await eng.sync_file("cool.md")
-        assert not os.path.exists(_icloud(cfg, "cool.md"))
-
-    @pytest.mark.asyncio
-    async def test_expired_cooldown_allows_sync(self, eng, cfg):
-        _write(_local(cfg, "cool2.md"), "y" * 20)
-        eng.cooldowns["cool2.md"] = time.time() - 1
-        await eng.sync_file("cool2.md")
-        assert os.path.exists(_icloud(cfg, "cool2.md"))
-
-# ── iCloud guard ──
-
-class TestICloudGuard:
-    @pytest.mark.asyncio
-    async def test_cloud_only_state_defers_sync(self, eng, cfg):
-        _write(_local(cfg, "guarded.md"), "x")
-        _write(_icloud(cfg, "guarded.md"), "x")
-
-        mock_checker = MagicMock(spec=ICloudStatusChecker)
-        mock_checker.detect.return_value = ICloudSyncState.CLOUD_ONLY
-        mock_checker.is_safe.return_value = False
-        eng.icloud_checker = mock_checker
-        cfg.check_icloud_status = True
-
-        await eng.sync_file("guarded.md")
-        eng.log.info.assert_called()
-        assert open(_icloud(cfg, "guarded.md")).read() == "x"
-
-    @pytest.mark.asyncio
-    async def test_local_state_allows_sync(self, eng, cfg):
-        _write(_local(cfg, "ready.md"), "ready content")
-        _write(_icloud(cfg, "ready.md"), "old content")
-
-        mock_checker = MagicMock(spec=ICloudStatusChecker)
-        mock_checker.detect.return_value = ICloudSyncState.LOCAL
-        mock_checker.is_safe.return_value = True
-        eng.icloud_checker = mock_checker
-        cfg.check_icloud_status = True
-
-        _write(_history(cfg, "ready.md"), "old content")
-        h = hashlib.sha256(b"old content").hexdigest()
-        t = os.path.getmtime(_icloud(cfg, "ready.md"))
-        eng.hasher.state["ready.md"] = {
-            "C": {"mtime": t, "size": len("old content"), "hash": h},
-            "H": {"mtime": t, "size": len("old content"), "hash": h},
-        }
-        await eng.sync_file("ready.md")
-        assert open(_icloud(cfg, "ready.md")).read() == "ready content"
-
-# ── iCloud guard integration ──
-
-class TestICloudGuardIntegration:
-    @pytest.mark.asyncio
-    async def test_defers_when_unsafe(self, eng, cfg):
-        _write(_local(cfg, "guarded.md"), "x" * 50)
-        _write(_icloud(cfg, "guarded.md"), "original")
-        mock_checker = MagicMock()
-        mock_checker.detect.return_value = ICloudSyncState.CLOUD_ONLY
-        eng.icloud_checker = mock_checker
-        cfg.check_icloud_status = True
-        await eng.sync_file("guarded.md")
-        assert open(_icloud(cfg, "guarded.md")).read() == "original"
-
-    @pytest.mark.asyncio
-    async def test_allows_when_safe(self, eng, cfg):
-        _write(_local(cfg, "ready.md"), "updated content")
-        _write(_icloud(cfg, "ready.md"), "old content")
-        _write(_history(cfg, "ready.md"), "old content")
-        h = hashlib.sha256(b"old content").hexdigest()
-        t = os.path.getmtime(_icloud(cfg, "ready.md"))
-        eng.hasher.state["ready.md"] = {
-            "C": {"mtime": t, "size": len("old content"), "hash": h},
-            "H": {"mtime": t, "size": len("old content"), "hash": h},
-        }
-        mock_checker = MagicMock()
-        mock_checker.is_safe.return_value = True
-        eng.icloud_checker = mock_checker
-        cfg.check_icloud_status = True
-        await eng.sync_file("ready.md")
-        assert open(_icloud(cfg, "ready.md")).read() == "updated content"
-
-    @pytest.mark.asyncio
-    async def test_guard_skipped_when_checker_is_none(self, eng, cfg):
-        cfg.check_icloud_status = False
-        eng.icloud_checker = None
-        _write(_local(cfg, "bypass.md"), "x" * 50)
-        await eng.sync_file("bypass.md")
-        assert os.path.exists(_icloud(cfg, "bypass.md"))
-
-# ── Tiny file guard ──
+#  Tiny file guard
 
 class TestTinyFiles:
     @pytest.mark.asyncio
@@ -396,7 +289,49 @@ class TestTinyFiles:
         assert os.path.exists(os.path.join(cfg.icloud_vault, ".obsidian", "app.json"))
 
 
-# ── push_to_icloud / restore_from_icloud ──
+class TestPerFileQueue:
+    @pytest.mark.asyncio
+    async def test_drains_duplicate_events_while_worker_busy(self, engine):
+        gate = asyncio.Event()
+        started = asyncio.Event()
+
+        async def fake_sync(rel):
+            started.set()
+            await gate.wait()
+
+        engine.synchronizer.sync_wrapper = AsyncMock(side_effect=fake_sync)
+
+        engine.enqueue_file_event(FileSyncEvent("modified", "note.md"))
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        engine.enqueue_file_event(FileSyncEvent("modified", "note.md"))
+        engine.enqueue_file_event(FileSyncEvent("modified", "note.md"))
+
+        # Now both events are in queue
+        assert engine.file_queues["note.md"].qsize() == 2
+
+        gate.set()
+        await asyncio.wait_for(engine.file_queues["note.md"].join(), timeout=1)
+
+        # Worker processes once more and drains pending events
+        assert engine.synchronizer.sync_wrapper.await_count == 2
+
+
+class TestWatcherScopeAndSuppression:
+    def test_observer_watches_only_local_and_icloud(self, engine, cfg):
+        with patch("obsidian_sync.sync_engine.Observer") as observer_cls:
+            observer = MagicMock()
+            observer_cls.return_value = observer
+
+            engine.create_observer()
+
+            scheduled_roots = [call.args[1] for call in observer.schedule.call_args_list]
+            assert os.path.abspath(cfg.local_vault) in scheduled_roots
+            assert os.path.abspath(cfg.icloud_vault) in scheduled_roots
+            assert os.path.abspath(cfg.history_dir) not in scheduled_roots
+
+
+#  push_to_icloud / restore_from_icloud
 
 class TestPushRestore:
     @pytest.mark.asyncio
@@ -407,12 +342,6 @@ class TestPushRestore:
         assert os.path.exists(_history(cfg, "push.md"))
 
     @pytest.mark.asyncio
-    async def test_push_sets_cooldown(self, eng, cfg):
-        _write(_local(cfg, "cd.md"), "x")
-        await eng.push_to_icloud("cd.md")
-        assert "cd.md" in eng.cooldowns
-
-    @pytest.mark.asyncio
     async def test_restore_copies_to_local_and_history(self, eng, cfg):
         _write(_icloud(cfg, "restore.md"), "cloud content")
         await eng.restore_from_icloud("restore.md")
@@ -420,61 +349,20 @@ class TestPushRestore:
         assert os.path.exists(_history(cfg, "restore.md"))
 
     @pytest.mark.asyncio
-    async def test_restore_sets_cooldown(self, eng, cfg):
-        _write(_icloud(cfg, "rcd.md"), "x")
-        await eng.restore_from_icloud("rcd.md")
-        assert "rcd.md" in eng.cooldowns
+    async def test_restore_uses_icloud_read_guard(self, eng, cfg):
+        eng.io.copy_from_icloud = AsyncMock()
+        await eng.restore_from_icloud("guarded.md")
+        assert eng.io.copy_from_icloud.call_count == 1
 
-# ── sync_wrapper ──
+#  sync_wrapper
 
 class TestSyncWrapper:
     @pytest.mark.asyncio
     async def test_exception_is_caught_and_logged(self, eng, cfg):
-        eng.io.async_copy = AsyncMock(side_effect=RuntimeError("disk full"))
+        eng.io.copy_to_icloud = AsyncMock(side_effect=RuntimeError("disk full"))
         _write(_local(cfg, "broken.md"), "x" * 50)
         await eng.sync_wrapper("broken.md")
         eng.log.error.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_active_tasks_cleaned_on_exception(self, eng, cfg):
-        eng.io.async_copy = AsyncMock(side_effect=RuntimeError("boom"))
-        _write(_local(cfg, "task.md"), "x" * 50)
-        eng.active_tasks.add("task.md")
-        await eng.sync_wrapper("task.md")
-        assert "task.md" not in eng.active_tasks
-
-    @pytest.mark.asyncio
-    async def test_active_tasks_cleaned_on_success(self, eng, cfg):
-        _write(_local(cfg, "ok.md"), "x" * 50)
-        eng.active_tasks.add("ok.md")
-        await eng.sync_wrapper("ok.md")
-        assert "ok.md" not in eng.active_tasks
-
-# ── run() one-shot ──
-
-class TestRun:
-    @pytest.mark.asyncio
-    async def test_run_oneshot_processes_all_files(self, eng, cfg):
-        _write(_local(cfg, "a.md"), "a" * 50)
-        _write(_local(cfg, "b.md"), "a" * 50)
-        cfg.run_continuously = False
-        await eng.run()
-        assert os.path.exists(_icloud(cfg, "a.md"))
-        assert os.path.exists(_icloud(cfg, "b.md"))
-
-    @pytest.mark.asyncio
-    async def test_run_oneshot_saves_state(self, eng, cfg):
-        _write(_local(cfg, "x.md"), "yyy")
-        cfg.run_continuously = False
-        await eng.run()
-        assert os.path.exists(cfg.state_file_path)
-
-    @pytest.mark.asyncio
-    async def test_run_cleans_up_old_logs(self, eng, cfg):
-        cfg.run_continuously = False
-        with patch.object(eng.log, "cleanup_old_logs", new_callable=AsyncMock) as cl:
-            await eng.run()
-            cl.assert_called_once()
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

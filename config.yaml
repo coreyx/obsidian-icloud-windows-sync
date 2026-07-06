@@ -9,14 +9,10 @@ paths:
 
 sync:
   run_continuously: true
-  user_interface: true #TODO Implement UI
   check_icloud_status: true
   poll_interval: 2
   stability_window: 3
   stabilize_wait: 8
-  cooldown_seconds: 3
-  big_file_cooldown: 30
-  big_file_threshold: 102400   # 100 KB
   tiny_threshold: 8
 
 logging:

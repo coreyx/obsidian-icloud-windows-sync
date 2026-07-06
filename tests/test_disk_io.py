@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock, call
 from conftest import DiskIO, safe_exists, size_or_zero, safe_mtime, ensure_dir
 
-# ── Safe Exists ──
+#  Safe Exists
 
 class TestSafeExists:
     def test_returns_true_for_existing_file(self, tmp_path):
@@ -18,7 +18,7 @@ class TestSafeExists:
         with patch("os.path.exists", side_effect=PermissionError):
             assert safe_exists("/some/path") is False
 
-# ── Size Or Zero ──
+#  Size Or Zero
 
 class TestSizeOrZero:
     def test_returns_file_size(self, tmp_path):
@@ -32,7 +32,7 @@ class TestSizeOrZero:
         with patch("os.path.getsize", side_effect=OSError):
             assert size_or_zero("/some/path") == 0
 
-# ── Safe Mtime ──
+#  Safe Mtime
 
 class TestSafeMtime:
     def test_returns_mtime(self, tmp_path):
@@ -46,7 +46,7 @@ class TestSafeMtime:
         with patch("os.path.getmtime", side_effect=OSError):
             assert safe_mtime("/path") == 0
 
-# ── Ensure Dir ──
+#  Ensure Dir
 
 class TestEnsureDir:
     def test_creates_missing_directory(self, tmp_path):
@@ -58,7 +58,7 @@ class TestEnsureDir:
         d = tmp_path / "existing"; d.mkdir()
         ensure_dir(str(d))
 
-# ── DiskIO ──
+#  DiskIO
 
 class TestDiskIOInit:
     def test_requires_windows_platform(self, cfg, mock_log):
@@ -71,7 +71,7 @@ class TestDiskIOInit:
             dio = DiskIO(cfg, mock_log)
             assert dio is not None
 
-# ── Async Copy ──
+#  Async Copy
 
 class TestAsyncCopy:
     @pytest.mark.asyncio
@@ -124,7 +124,67 @@ class TestAsyncCopy:
         tmp_file = str(dst) + ".tmp"
         assert not os.path.exists(tmp_file)
 
-# ── Remove File ──
+    @pytest.mark.asyncio
+    async def test_copy_to_icloud_stages_outside_icloud_dir(self, cfg, tmp_path, mock_log):
+        src = tmp_path / "src.md"; src.write_text("content")
+        dst = tmp_path / "icloud" / "note.md"
+        cfg.icloud_vault = str(tmp_path / "icloud")
+        cfg.logs_dir = str(tmp_path / "logs")
+        cfg.check_icloud_status = False
+        with patch("platform.system", return_value="Windows"):
+            dio = DiskIO(cfg, mock_log)
+
+        with patch.object(dio, "_replace_with_retries") as replace_mock:
+            await dio.copy_to_icloud(str(src), str(dst))
+
+        assert dst.exists()
+        assert dst.read_text() == "content"
+        replace_mock.assert_not_called()
+        assert not os.path.exists(str(dst) + ".tmp")
+
+    @pytest.mark.asyncio
+    async def test_copy_to_icloud_falls_back_to_direct_copy_without_same_drive_staging(self, cfg, tmp_path, mock_log):
+        src = tmp_path / "src.md"; src.write_text("content")
+        dst = tmp_path / "icloud" / "direct.md"
+        cfg.icloud_vault = str(tmp_path / "icloud")
+        cfg.logs_dir = "D:\\logs"
+        cfg.history_dir = "D:\\history"
+        cfg.local_vault = "D:\\local"
+        cfg.check_icloud_status = False
+        with patch("platform.system", return_value="Windows"):
+            dio = DiskIO(cfg, mock_log)
+
+        with patch.object(dio, "_replace_with_retries") as replace_mock:
+            await dio.copy_to_icloud(str(src), str(dst))
+
+        assert dst.exists()
+        assert dst.read_text() == "content"
+        replace_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_copy_to_disk_uses_tmp_file_next_to_destination(self, cfg, tmp_path, mock_log):
+        src = tmp_path / "src.md"; src.write_text("data")
+        dst = tmp_path / "history" / "note.md"
+        with patch("platform.system", return_value="Windows"):
+            dio = DiskIO(cfg, mock_log)
+
+        observed = {}
+        original_replace = dio._replace_with_retries
+
+        def capture_replace(tmp, final_dst, *args, **kwargs):
+            observed["tmp"] = tmp
+            observed["dst"] = final_dst
+            return original_replace(tmp, final_dst, *args, **kwargs)
+
+        with patch.object(dio, "_replace_with_retries", side_effect=capture_replace):
+            await dio.copy_to_disk(str(src), str(dst))
+
+        assert dst.exists()
+        assert dst.read_text() == "data"
+        assert observed["dst"] == str(dst)
+        assert observed["tmp"] == str(dst) + ".tmp"
+
+#  Remove File
 
 class TestRemoveFile:
     @pytest.mark.asyncio
@@ -154,7 +214,7 @@ class TestRemoveFile:
         await dio.remove_file(str(f), "test")
         assert not sub.exists()
 
-# ── Remove File Sync ──
+#  Remove File Sync
 
 class TestRemoveFileSync:
     def test_removes_file(self, cfg, tmp_path, mock_log):
@@ -169,7 +229,7 @@ class TestRemoveFileSync:
             dio = DiskIO(cfg, mock_log)
         dio.remove_file_sync(str(tmp_path / "ghost.md"), "test")
 
-# ── Create Conflict Duplicate ──
+#  Create Conflict Duplicate
 
 class TestCreateConflictDuplicate:
     @pytest.mark.asyncio
