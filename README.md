@@ -5,13 +5,13 @@ A highly optimized, asynchronous, three-way sync engine designed to solve the no
 ![terminal image](assets/image.png)
 
 ## Installation & Setup
-
-1. Clone the repository.
-2. Install as a package:
+1. Install iCloud for Windows [Link](https://support.apple.com/en-ca/103232)
+2. Clone the repository using `git clone git@github.com:gursimar/obsidian-icloud-windows-sync.git`
+3. Install as a package:
    ```bash
    pip install .
    ```
-3. Copy and edit the config file with your actual paths:
+4. Copy and edit the config file with your actual paths:
    ```bash
    cp config.yaml my-config.yaml
    ```
@@ -22,7 +22,7 @@ A highly optimized, asynchronous, three-way sync engine designed to solve the no
      history_dir: "C:\\Obsidian\\History"
      logs_dir: "C:\\Obsidian\\Logs"
    ```
-4. Run:
+5. Run:
    ```bash
    obsidian-sync --config config.yaml
    ```
@@ -31,6 +31,7 @@ A highly optimized, asynchronous, three-way sync engine designed to solve the no
    python -m obsidian_sync --config config.yaml
    ```
 
+> If you have any trouble in setup, raise issue on git.
 > Run natively on Windows, not WSL — iCloud placeholders behave incorrectly under WSL.
 
 ## Project Structure

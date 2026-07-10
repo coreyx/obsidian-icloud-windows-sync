@@ -103,11 +103,20 @@ class SyncEngine:
         name_lower = os.path.basename(rel_path).lower()
         if (
             name_lower.endswith(".tmp")
+            or name_lower.endswith(".")  # Trailing dot (temp files)
+            or name_lower.endswith("~")  # Backup files
             or name_lower.startswith("._")
             or name_lower in self.config.ignored_files
             or "page-preview" in name_lower
         ):
             return False
+        
+        # Filter files with patterns like ".mds." (extension + s + dot) which are temp files
+        if "." in name_lower:
+            parts = name_lower.rsplit(".", 2)
+            if len(parts) == 3 and parts[1] and len(parts[1]) == 1 and parts[2] == "":
+                # Matches patterns like "file.md.s." or "file.txt.x."
+                return False
 
         parts = [part.lower() for part in os.path.normpath(rel_path).split(os.sep)]
         if any(part in self.config.ignored_dirs for part in parts):

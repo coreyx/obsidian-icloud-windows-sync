@@ -227,13 +227,31 @@ class ICloudStatusChecker:
         """
         Waits until an iCloud file exists, has stable size/mtime, has local
         content available, and Explorer no longer reports upload/sync pending.
+        
+        Will retry indefinitely with periodic warnings if iCloud is slow.
+        The timeout_seconds parameter is kept for compatibility but no longer enforced.
         """
-        deadline = time.time() + timeout_seconds
+        start_time = time.time()
         stable_since = None
         previous: tuple[int, int] | None = None
         last_summary = None
+        last_warning_at = 0
+        warning_thresholds = [30, 60, 120]  # Initial warnings at these seconds
+        next_periodic_warning = 180  # After 120s, warn every 60s
 
-        while time.time() < deadline:
+        while True:  # Infinite retry loop
+            elapsed = time.time() - start_time
+            
+            # Log warnings at specific thresholds
+            if warning_thresholds and elapsed >= warning_thresholds[0]:
+                threshold = warning_thresholds.pop(0)
+                if on_update is not None:
+                    on_update(f"⚠️ iCloud sync taking longer than expected ({threshold}s elapsed). Check network/iCloud status.")
+            elif elapsed >= next_periodic_warning:
+                if on_update is not None:
+                    on_update(f"⚠️ Still waiting for iCloud ({int(elapsed)}s elapsed). File may be uploading slowly.")
+                next_periodic_warning = elapsed + 60  # Warn again in 60s
+            
             snap = await asyncio.to_thread(self.snapshot, path)
             summary = self.describe_snapshot(snap)
             if on_update is not None and summary != last_summary:
@@ -251,12 +269,10 @@ class ICloudStatusChecker:
                     stable_since = time.time()
                 if time.time() - stable_since >= stable_seconds:
                     if on_update is not None:
-                        on_update(f"settled after {stable_seconds:.1f}s stable window")
+                        on_update(f"✓ settled after {stable_seconds:.1f}s stable window (total: {int(elapsed)}s)")
                     return True
             else:
                 stable_since = None
                 previous = current
 
             await asyncio.sleep(poll_seconds)
-
-        return False

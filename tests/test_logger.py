@@ -169,18 +169,38 @@ class TestLogMethods:
             log.error("CRITICAL", "fatal", critical=True)
         assert exc_info.value.code == 1
 
-    def test_custom_verbose_uses_full_msg(self, log, cfg, capsys):
+    def test_push_verbose_uses_full_msg(self, log, cfg, capsys):
         cfg.console_level = "verbose"
-        log.custom(["", ""], [Fore.GREEN, Fore.CYAN], "PUSH", "Full detailed message", "short.md", level="verbose")
+        log.push("Full detailed message", "short.md", level="verbose")
         out = capsys.readouterr().out
         assert "Full detailed message" in out
+        assert "PUSH" in out
 
-    def test_custom_normal_uses_short_path(self, log, cfg, capsys):
+    def test_push_normal_uses_short_path(self, log, cfg, capsys):
         cfg.console_level = "normal"
-        log.custom(["", ""], [Fore.GREEN, Fore.CYAN], "PUSH", "Full detailed message", "short.md", level="normal")
+        log.push("Full detailed message", "short.md", level="normal")
         out = capsys.readouterr().out
         assert "short.md" in out
         assert "Full detailed message" not in out
+
+    def test_pull_verbose_uses_full_msg(self, log, cfg, capsys):
+        cfg.console_level = "verbose"
+        log.pull("Full detailed message", "short.md", level="verbose")
+        out = capsys.readouterr().out
+        assert "Full detailed message" in out
+        assert "PULL" in out
+
+    def test_delete_logs_correctly(self, log, cfg, capsys):
+        cfg.console_level = "verbose"
+        log.delete("Removing file", "test.md", level="verbose")
+        out = capsys.readouterr().out
+        assert "DELETE" in out
+
+    def test_new_logs_correctly(self, log, cfg, capsys):
+        cfg.console_level = "verbose"
+        log.new("New file detected", "test.md", level="verbose", source="local")
+        out = capsys.readouterr().out
+        assert "NEW" in out
 
 #  init_log_file
 

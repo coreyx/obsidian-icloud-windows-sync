@@ -66,6 +66,26 @@ class TestGatherRelPaths:
         assert "draft.tmp" not in paths
 
     @pytest.mark.asyncio
+    async def test_filters_trailing_dot_files(self, engine, cfg):
+        _write(_local(cfg, "file.md."))
+        paths = engine.gather_rel_paths()
+        assert "file.md." not in paths
+
+    @pytest.mark.asyncio
+    async def test_filters_temp_save_files(self, engine, cfg):
+        _write(_local(cfg, "file.mds."))
+        _write(_local(cfg, "note.mdx."))
+        paths = engine.gather_rel_paths()
+        assert "file.mds." not in paths
+        assert "note.mdx." not in paths
+
+    @pytest.mark.asyncio
+    async def test_filters_backup_tilde_files(self, engine, cfg):
+        _write(_local(cfg, "draft.md~"))
+        paths = engine.gather_rel_paths()
+        assert "draft.md~" not in paths
+
+    @pytest.mark.asyncio
     async def test_filters_dotunderscore_files(self, engine, cfg):
         _write(_local(cfg, "._something.md"))
         paths = engine.gather_rel_paths()

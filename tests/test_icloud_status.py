@@ -147,7 +147,7 @@ class TestWaitUntilUploaded:
 
         assert ok is True
         assert any("pending=True" in update for update in updates)
-        assert updates[-1].startswith("settled after")
+        assert "settled after" in updates[-1]  # Message now includes checkmark emoji prefix
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

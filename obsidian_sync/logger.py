@@ -162,23 +162,73 @@ class SyncLogger:
         self.console_event("", Fore.GREEN, msg_type, msg, level=level)
         self.write_to_file(msg_type, msg)
 
-    def custom(self, icons: list[str], colors: list, msg_type: str, msg: str, rel_path: str, level: str = "normal") -> None:
+    def push(self, msg: str, rel_path: str, level: str = "normal", warning: bool = False):
         """
-        Logs a custom formatted event that changes output based on verbosity.
+        Logs a PUSH operation (local → iCloud).
 
         Args:
-            icons (list[str]): A list of two icons: `[normal_icon, verbose_icon]`.
-            colors (list): A list of two colorama codes: `[normal_color, verbose_color]`.
-            msg_type (str): The categorical label.
+            msg (str): The full detailed message for verbose mode.
+            rel_path (str): The shortened path to display in normal mode.
+            level (str, optional): The `LEVEL_MAP`.
+            warning (bool, optional): If True, uses warning icon/color.
+        """
+        icons = ["↑", "!"] if warning else ["↑", "○"]
+        colors = [Fore.YELLOW, Fore.YELLOW] if warning else [Fore.GREEN, Fore.GREEN]
+        if self.config.console_level.lower() != "verbose":
+            self.console_event(icons[0], colors[0], "PUSH", rel_path, level="normal")
+        else:
+            self.console_event(icons[1], colors[1], "PUSH", msg, level=level)
+        self.write_to_file("PUSH", msg)
+
+    def pull(self, msg: str, rel_path: str, level: str = "normal", warning: bool = False):
+        """
+        Logs a PULL operation (iCloud → local).
+
+        Args:
+            msg (str): The full detailed message for verbose mode.
+            rel_path (str): The shortened path to display in normal mode.
+            level (str, optional): The `LEVEL_MAP`.
+            warning (bool, optional): If True, uses warning icon/color.
+        """
+        icons = ["↓", "!"] if warning else ["↓", "○"]
+        colors = [Fore.YELLOW, Fore.YELLOW] if warning else [Fore.CYAN, Fore.CYAN]
+        if self.config.console_level.lower() != "verbose":
+            self.console_event(icons[0], colors[0], "PULL", rel_path, level="normal")
+        else:
+            self.console_event(icons[1], colors[1], "PULL", msg, level=level)
+        self.write_to_file("PULL", msg)
+
+    def delete(self, msg: str, rel_path: str, level: str = "normal"):
+        """
+        Logs a DELETE operation.
+
+        Args:
             msg (str): The full detailed message for verbose mode.
             rel_path (str): The shortened path to display in normal mode.
             level (str, optional): The `LEVEL_MAP`.
         """
         if self.config.console_level.lower() != "verbose":
-            self.console_event(icons[0], colors[0], msg_type, rel_path, level="normal")
+            self.console_event("←", Fore.RED, "DELETE", rel_path, level="normal")
         else:
-            self.console_event(icons[1], colors[1], msg_type, msg, level=level)
-        self.write_to_file(msg_type, msg)
+            self.console_event("✗", Fore.RED, "DELETE", msg, level=level)
+        self.write_to_file("DELETE", msg)
+
+    def new(self, msg: str, rel_path: str, level: str = "normal", source: str = "local"):
+        """
+        Logs a NEW file operation.
+
+        Args:
+            msg (str): The full detailed message for verbose mode.
+            rel_path (str): The shortened path to display in normal mode.
+            level (str, optional): The `LEVEL_MAP`.
+            source (str, optional): "local" or "icloud" to determine icon color.
+        """
+        color = Fore.GREEN if source == "local" else Fore.CYAN
+        if self.config.console_level.lower() != "verbose":
+            self.console_event("→", Fore.LIGHTBLACK_EX, "NEW", rel_path, level="normal")
+        else:
+            self.console_event("○", color, "NEW", msg, level=level)
+        self.write_to_file("NEW", msg)
 
     #  Console helpers
 

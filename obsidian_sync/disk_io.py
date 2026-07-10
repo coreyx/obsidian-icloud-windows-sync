@@ -225,7 +225,7 @@ class DiskIO:
             return
         self.log.info("ICLOUD_WAIT", f"Waiting for iCloud to settle: {self.config.disp(dst)}", level="verbose")
         stable_seconds = max(1.0, float(getattr(self.config, "stability_window", 0)))
-        if not await self.icloud_checker.wait_until_uploaded(
+        await self.icloud_checker.wait_until_uploaded(
             dst,
             stable_seconds=stable_seconds,
             on_update=lambda message: self.log.info(
@@ -233,8 +233,7 @@ class DiskIO:
                 f"{self.config.disp(dst)} :: {message}",
                 level="verbose",
             ),
-        ):
-            raise TimeoutError(f"iCloud did not settle after copy: {dst}")
+        )
         self.log.success("SUCCESS", f"iCloud settled: {self.config.disp(dst)}", level="verbose")
 
     async def wait_for_icloud_readable(self, src: str) -> None:
@@ -242,7 +241,7 @@ class DiskIO:
             return
         self.log.info("ICLOUD_WAIT", f"Waiting for iCloud file: {self.config.disp(src)}", level="verbose")
         stable_seconds = max(1.0, float(getattr(self.config, "stability_window", 0)))
-        if not await self.icloud_checker.wait_until_uploaded(
+        await self.icloud_checker.wait_until_uploaded(
             src,
             stable_seconds=stable_seconds,
             on_update=lambda message: self.log.info(
@@ -250,8 +249,7 @@ class DiskIO:
                 f"{self.config.disp(src)} :: {message}",
                 level="verbose",
             ),
-        ):
-            raise TimeoutError(f"iCloud file is not ready to read: {src}")
+        )
 
     async def copy_from_icloud(self, src: str, dst: str) -> None:
         self.log.info("copy_from_icloud", f"{self.config.disp(src)} -> {self.config.disp(dst)}", level="verbose")

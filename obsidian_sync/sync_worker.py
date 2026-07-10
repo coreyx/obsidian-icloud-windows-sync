@@ -63,6 +63,7 @@ class FileSynchronizer:
     async def push_to_icloud(self, rel: str):
         """
         Asynchronously pushes a file from the local vault to iCloud and history.
+        Copies to history first (fast), then to iCloud (potentially slow).
 
         Args:
             rel (str): The relative file path to push.
@@ -72,7 +73,7 @@ class FileSynchronizer:
         history = os.path.join(self.config.history_dir, rel)
         await self._copy_via_staging(
             source=local,
-            destinations=[("icloud", icloud), ("disk", history)],
+            destinations=[("disk", history), ("icloud", icloud)],  # History first, then iCloud
             source_is_icloud=False,
         )
 
@@ -148,11 +149,11 @@ class FileSynchronizer:
             self.log.warn("DELETE", f"{colored('Local missing', Fore.RED)}, stabilizing for {d}", level="verbose")
             Lh, Ch, Hh = await self.recheck(local, icloud, history, rel_path)
             if Ch is not None and Hh is not None and Ch == Hh:
-                self.log.custom(["<-", "x"], [Fore.RED, Fore.RED], "DELETE", f"{colored('Removing from iCloud', Fore.CYAN)} & history for {d}", rel_path, level="verbose")
+                self.log.delete(f"{colored('Removing from iCloud', Fore.CYAN)} & history for {d}", d, level="verbose")
                 await self.io.remove_file(icloud, "iCloud")
                 await self.io.remove_file(history, "history")
             else:
-                self.log.custom(["v", "o"], [Fore.CYAN, Fore.CYAN], "PULL", f"{colored('Restoring to local', Fore.GREEN)} from iCloud for {d}", rel_path, level="verbose")
+                self.log.pull(f"{colored('Restoring to local', Fore.GREEN)} from iCloud for {d}", d, level="verbose")
                 await self.restore_from_icloud(rel_path)
             return
 
@@ -161,17 +162,17 @@ class FileSynchronizer:
             self.log.warn("DELETE", f"{colored('iCloud missing', Fore.RED)}, stabilizing for {d}", level="verbose")
             Lh, Ch, Hh = await self.recheck(local, icloud, history, rel_path)
             if Lh is not None and Hh is not None and Lh == Hh:
-                self.log.custom(["<-", "x"], [Fore.RED, Fore.RED], "DELETE", f"{colored('Removing local', Fore.RED)} & history for {d}", rel_path, level="verbose")
+                self.log.delete(f"{colored('Removing local', Fore.RED)} & history for {d}", d, level="verbose")
                 await self.io.remove_file(local, "local")
                 await self.io.remove_file(history, "history")
             else:
-                self.log.custom(["^", "o"], [Fore.GREEN, Fore.GREEN], "PUSH", f"Local changed for {d} -> pushing to iCloud", rel_path, level="verbose")
+                self.log.push(f"Local changed for {d} -> pushing to iCloud", d, level="verbose")
                 await self.push_to_icloud(rel_path)
             return
 
         # New local file (L only)
         if L_exists and not C_exists and not H_exists:
-            self.log.custom(["->", "o"], [Fore.LIGHTBLACK_EX, Fore.GREEN], "NEW", f"{colored('Local-only', Fore.GREEN)}, stabilizing {d}", rel_path, level="verbose")
+            self.log.new(f"{colored('Local-only', Fore.GREEN)}, stabilizing {d}", d, level="verbose", source="local")
             Lh, Ch, Hh = await self.recheck(local, icloud, history, rel_path)
             if Lh is None:
                 self.log.info("SKIP", f"After stabilize local missing for {d}", level="verbose")
@@ -179,13 +180,13 @@ class FileSynchronizer:
             if size_or_zero(local) < cfg.min_seed_size(rel_path):
                 self.log.info("SKIP", f"Local too small, deferring {d}", level="verbose")
                 return
-            self.log.custom(["^", "o"], [Fore.GREEN, Fore.GREEN], "PUSH", f"{colored('Pushing to iCloud', Fore.CYAN)} for {d}", rel_path, level="verbose")
+            self.log.push(f"{colored('Pushing to iCloud', Fore.CYAN)} for {d}", d, level="verbose")
             await self.push_to_icloud(rel_path)
             return
 
         # New iCloud file (C only)
         if C_exists and not L_exists and not H_exists:
-            self.log.custom(["->", "o"], [Fore.LIGHTBLACK_EX, Fore.BLUE], "NEW", f"{colored('iCloud-only', Fore.CYAN)}, stabilizing {d}", rel_path, level="verbose")
+            self.log.new(f"{colored('iCloud-only', Fore.CYAN)}, stabilizing {d}", d, level="verbose", source="icloud")
             Lh, Ch, Hh = await self.recheck(local, icloud, history, rel_path)
             if Ch is None:
                 self.log.info("SKIP", f"After stabilize iCloud missing for {d}", level="verbose")
@@ -193,7 +194,7 @@ class FileSynchronizer:
             if size_or_zero(icloud) < cfg.tiny_threshold:
                 self.log.info("SKIP", f"iCloud too small, deferring {d}", level="verbose")
                 return
-            self.log.custom(["v", "o"], [Fore.CYAN, Fore.CYAN], "PULL", f"{colored('Restoring to local', Fore.GREEN)} for {d}", rel_path, level="verbose")
+            self.log.pull(f"{colored('Restoring to local', Fore.GREEN)} for {d}", d, level="verbose")
             await self.restore_from_icloud(rel_path)
             return
 
@@ -248,13 +249,13 @@ class FileSynchronizer:
 
         # CASE B: Local changed
         if L is not None and H is not None and L != H and C == H:
-            self.log.custom(["^", "o"], [Fore.GREEN, Fore.GREEN], "PUSH", f"{colored('Local changed', Fore.GREEN)}, pushing for {d}", rel_path, level="verbose")
+            self.log.push(f"{colored('Local changed', Fore.GREEN)}, pushing for {d}", d, level="verbose")
             await self.push_to_icloud(rel_path)
             return
 
         # CASE C: iCloud changed
         if C is not None and H is not None and C != H and L == H:
-            self.log.custom(["v", "o"], [Fore.CYAN, Fore.CYAN], "PULL", f"{colored('iCloud changed', Fore.CYAN)}, restoring for {d}", rel_path, level="verbose")
+            self.log.pull(f"{colored('iCloud changed', Fore.CYAN)}, restoring for {d}", d, level="verbose")
             await self.restore_from_icloud(rel_path)
             return
 
@@ -286,12 +287,12 @@ class FileSynchronizer:
             self.log.warn("CONFLICT", f"{colored('Both stabilized but still differ', Fore.YELLOW)}, resolving by fallback rules: {d}", level="important")
 
         if not safe_exists(local):
-            self.log.custom(["v", "!"], [Fore.CYAN, Fore.YELLOW], "PULL", f"{colored('Local vanished', Fore.YELLOW)}, restoring from iCloud: {d}", rel_path, level="verbose")
+            self.log.pull(f"{colored('Local vanished', Fore.YELLOW)}, restoring from iCloud: {d}", d, level="verbose", warning=True)
             await self.restore_from_icloud(rel_path)
             return
 
         if not safe_exists(icloud):
-            self.log.custom(["^", "!"], [Fore.GREEN, Fore.YELLOW], "PUSH", f"{colored('iCloud vanished', Fore.YELLOW)}, pushing local: {d}", rel_path, level="verbose")
+            self.log.push(f"{colored('iCloud vanished', Fore.YELLOW)}, pushing local: {d}", d, level="verbose", warning=True)
             await self.push_to_icloud(rel_path)
             return
 
