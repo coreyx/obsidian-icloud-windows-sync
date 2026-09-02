@@ -308,6 +308,15 @@ class TestTinyFiles:
         await eng.sync_file(".obsidian/app.json")
         assert os.path.exists(os.path.join(cfg.icloud_vault, ".obsidian", "app.json"))
 
+    @pytest.mark.asyncio
+    async def test_tiny_icloud_file_still_pulled(self, eng, cfg):
+        # A genuinely small real note (below tiny_threshold) must still be
+        # pulled to local, not silently dropped forever.
+        cfg.tiny_threshold = 10
+        _write(_icloud(cfg, "Welcome.md"), "hi")
+        await eng.sync_file("Welcome.md")
+        assert os.path.exists(_local(cfg, "Welcome.md"))
+
 
 class TestPerFileQueue:
     @pytest.mark.asyncio

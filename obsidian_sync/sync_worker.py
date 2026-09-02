@@ -191,9 +191,6 @@ class FileSynchronizer:
             if Ch is None:
                 self.log.info("SKIP", f"After stabilize iCloud missing for {d}", level="verbose")
                 return
-            if size_or_zero(icloud) < cfg.tiny_threshold:
-                self.log.info("SKIP", f"iCloud too small, deferring {d}", level="verbose")
-                return
             self.log.pull(f"{colored('Restoring to local', Fore.GREEN)} for {d}", d, level="verbose")
             await self.restore_from_icloud(rel_path)
             return
