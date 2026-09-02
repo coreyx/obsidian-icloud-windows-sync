@@ -109,6 +109,41 @@ class TestIsSafe:
             assert c.is_safe("C:/fake/file.md") is True
 
 
+class TestContentAvailable:
+    def test_fully_hydrated_cloud_only_is_available(self):
+        # Some providers (iCloud included) leave OFFLINE set on files they have
+        # already fully downloaded when the file isn't explicitly pinned, so the
+        # coarse state alone must not block a byte-for-byte complete file.
+        snap = ICloudFileSnapshot(
+            state=ICloudSyncState.CLOUD_ONLY,
+            size_logical=19,
+            size_on_disk=19,
+            mtime_ns=100,
+            shell_status="Available",
+        )
+        assert snap.content_available is True
+
+    def test_partially_downloaded_cloud_only_is_unavailable(self):
+        snap = ICloudFileSnapshot(
+            state=ICloudSyncState.CLOUD_ONLY,
+            size_logical=19,
+            size_on_disk=0,
+            mtime_ns=100,
+            shell_status="Available",
+        )
+        assert snap.content_available is False
+
+    def test_falls_back_to_state_when_size_on_disk_unknown(self):
+        snap = ICloudFileSnapshot(
+            state=ICloudSyncState.CLOUD_ONLY,
+            size_logical=19,
+            size_on_disk=None,
+            mtime_ns=100,
+            shell_status="Available",
+        )
+        assert snap.content_available is False
+
+
 class TestWaitUntilUploaded:
     @pytest.mark.asyncio
     async def test_waits_for_pending_to_clear_before_success(self, checker):

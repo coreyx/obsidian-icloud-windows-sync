@@ -67,11 +67,14 @@ class ICloudFileSnapshot:
 
     @property
     def content_available(self) -> bool:
-        if not self.state.is_safe and self.state != ICloudSyncState.UNKNOWN:
-            return False
-        if self.size_on_disk is None:
-            return True
-        return self.size_on_disk >= self.size_logical
+        # Byte counts are the authoritative signal: some cloud providers (iCloud
+        # included) leave OFFLINE set on files they have already fully hydrated
+        # when the file isn't explicitly pinned, so the coarse state can lag or
+        # be flat-out wrong. Trust actual bytes-on-disk over the attribute guess
+        # whenever we have them, and only fall back to the state when we don't.
+        if self.size_on_disk is not None:
+            return self.size_on_disk >= self.size_logical
+        return self.state.is_safe or self.state == ICloudSyncState.UNKNOWN
 
 
 class ICloudStatusChecker:
