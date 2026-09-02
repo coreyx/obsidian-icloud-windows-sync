@@ -164,7 +164,7 @@ class TestWaitUntilUploaded:
 
         snapshots = [pending, settled, settled, settled]
 
-        def fake_snapshot(_path):
+        def fake_snapshot(_path, skip_shell=False):
             if snapshots:
                 return snapshots.pop(0)
             return settled
@@ -183,6 +183,36 @@ class TestWaitUntilUploaded:
         assert ok is True
         assert any("pending=True" in update for update in updates)
         assert "settled after" in updates[-1]  # Message now includes checkmark emoji prefix
+
+    @pytest.mark.asyncio
+    async def test_does_not_spawn_shell_status_process_on_every_poll(self, checker):
+        # shell_availability_status launches a PowerShell + COM process per call.
+        # Calling it on every 0.5s poll tick (instead of once, as a final
+        # confirmation) starves the daemon's event loop when several files are
+        # syncing concurrently. Regression guard: with 10 cheap polls before
+        # settling, the expensive shell lookup must run about once, not 10x.
+        settled = ICloudFileSnapshot(
+            state=ICloudSyncState.LOCAL,
+            size_logical=10,
+            size_on_disk=10,
+            mtime_ns=100,
+            shell_status="Available on this device",
+        )
+        checker._k32.GetFileAttributesW.return_value = 0
+        with patch("os.path.exists", return_value=True), \
+             patch("os.stat", return_value=MagicMock(st_mtime_ns=100)), \
+             patch("os.path.getsize", return_value=10), \
+             patch.object(checker, "size_on_disk", return_value=10), \
+             patch.object(checker, "shell_availability_status", return_value=settled.shell_status) as shell_mock:
+            ok = await checker.wait_until_uploaded(
+                "C:/fake/file.md",
+                stable_seconds=0.05,
+                poll_seconds=0.01,
+                timeout_seconds=1.0,
+            )
+
+        assert ok is True
+        assert shell_mock.call_count <= 2
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

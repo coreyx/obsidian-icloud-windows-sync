@@ -194,7 +194,13 @@ class ICloudStatusChecker:
         except Exception:
             return None
 
-    def snapshot(self, path: str) -> Optional[ICloudFileSnapshot]:
+    def snapshot(self, path: str, skip_shell: bool = False) -> Optional[ICloudFileSnapshot]:
+        """
+        Args:
+            skip_shell: When True, omits the Explorer shell-status lookup, which
+                launches a PowerShell + COM Shell.Application process per call
+                and is too expensive to run on every poll tick.
+        """
         if not os.path.exists(path):
             return None
         try:
@@ -204,7 +210,7 @@ class ICloudStatusChecker:
                 size_logical=os.path.getsize(path),
                 size_on_disk=self.size_on_disk(path),
                 mtime_ns=stat.st_mtime_ns,
-                shell_status=self.shell_availability_status(path),
+                shell_status=None if skip_shell else self.shell_availability_status(path),
             )
         except OSError:
             return None
@@ -255,12 +261,17 @@ class ICloudStatusChecker:
                     on_update(f"⚠️ Still waiting for iCloud ({int(elapsed)}s elapsed). File may be uploading slowly.")
                 next_periodic_warning = elapsed + 60  # Warn again in 60s
             
-            snap = await asyncio.to_thread(self.snapshot, path)
+            # Cheap poll: attributes + byte counts only. The Explorer shell-status
+            # lookup (shell_availability_status) launches a PowerShell + COM
+            # process per call, so it's reserved for the one-time confirmation
+            # below rather than run on every 0.5s tick -- with several files
+            # syncing concurrently, polling it here can starve the event loop.
+            snap = await asyncio.to_thread(self.snapshot, path, True)
             summary = self.describe_snapshot(snap)
             if on_update is not None and summary != last_summary:
                 on_update(summary)
                 last_summary = summary
-            if snap is None or not snap.content_available or snap.upload_pending:
+            if snap is None or not snap.content_available:
                 stable_since = None
                 previous = None
                 await asyncio.sleep(poll_seconds)
@@ -271,9 +282,19 @@ class ICloudStatusChecker:
                 if stable_since is None:
                     stable_since = time.time()
                 if time.time() - stable_since >= stable_seconds:
-                    if on_update is not None:
-                        on_update(f"✓ settled after {stable_seconds:.1f}s stable window (total: {int(elapsed)}s)")
-                    return True
+                    # Confirm with the (expensive) shell status once, right before
+                    # declaring success, instead of on every poll.
+                    final_snap = await asyncio.to_thread(self.snapshot, path)
+                    final_summary = self.describe_snapshot(final_snap)
+                    if on_update is not None and final_summary != last_summary:
+                        on_update(final_summary)
+                        last_summary = final_summary
+                    if final_snap is not None and final_snap.content_available and not final_snap.upload_pending:
+                        if on_update is not None:
+                            on_update(f"✓ settled after {stable_seconds:.1f}s stable window (total: {int(elapsed)}s)")
+                        return True
+                    stable_since = None
+                    previous = None
             else:
                 stable_since = None
                 previous = current
