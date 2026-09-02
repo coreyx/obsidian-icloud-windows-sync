@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from conftest import (FILE_ATTRIBUTE_PINNED, FILE_ATTRIBUTE_OFFLINE, FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS,ICloudStatusChecker, ICloudSyncState)
+import obsidian_sync.icloud_status as icloud_status_module
 from obsidian_sync.icloud_status import ICloudFileSnapshot
 
 #  Fixtures
@@ -142,6 +143,36 @@ class TestContentAvailable:
             shell_status="Available",
         )
         assert snap.content_available is False
+
+
+class TestShellAvailabilityStatus:
+    def test_reuses_persistent_com_worker_across_calls(self, checker):
+        # The COM object must be created once and reused, not spawned fresh
+        # (whether as a new process or a new COM object) on every lookup.
+        fake_item = MagicMock()
+        fake_folder = MagicMock()
+        fake_folder.ParseName.return_value = fake_item
+        fake_folder.GetDetailsOf.return_value = "Available"
+        fake_shell = MagicMock()
+        fake_shell.Namespace.return_value = fake_folder
+
+        try:
+            with patch("obsidian_sync.icloud_status.win32com.client.Dispatch", return_value=fake_shell) as dispatch_mock:
+                status1 = checker.shell_availability_status("C:/fake/dir/file.md")
+                status2 = checker.shell_availability_status("C:/fake/dir/file.md")
+        finally:
+            checker.close()
+
+        assert status1 == "Available"
+        assert status2 == "Available"
+        assert dispatch_mock.call_count == 1
+
+    def test_returns_none_without_pywin32(self, checker):
+        with patch.object(icloud_status_module, "_PYWIN32_AVAILABLE", False):
+            assert checker.shell_availability_status("C:/fake/dir/file.md") is None
+
+    def test_close_is_safe_when_never_used(self, checker):
+        checker.close()  # no worker was ever started; must not raise
 
 
 class TestWaitUntilUploaded:

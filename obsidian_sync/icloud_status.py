@@ -1,12 +1,20 @@
 import ctypes
 import os
 import platform
-import subprocess
+import queue
+import threading
 import asyncio
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Optional
+
+try:
+    import pythoncom
+    import win32com.client
+    _PYWIN32_AVAILABLE = True
+except ImportError:
+    _PYWIN32_AVAILABLE = False
 
 FILE_ATTRIBUTE_OFFLINE = 0x00001000  # "O" - only in cloud, not local
 FILE_ATTRIBUTE_PINNED = 0x00080000  # "P" - always local (pinned)
@@ -77,12 +85,69 @@ class ICloudFileSnapshot:
         return self.state.is_safe or self.state == ICloudSyncState.UNKNOWN
 
 
+class _ShellStatusWorker:
+    """
+    Owns a single Shell.Application COM object on one dedicated background
+    thread for the life of the process. COM automation objects like this are
+    bound to the apartment (thread) that created them, so this avoids both
+    re-creating the object per call and the cost of a subprocess per call --
+    each lookup is now a plain in-process COM method call instead of a fresh
+    PowerShell interpreter launch.
+    """
+    def __init__(self):
+        self._requests: "queue.Queue" = queue.Queue()
+        self._thread = threading.Thread(
+            target=self._run, name="icloud-shell-status", daemon=True
+        )
+        self._thread.start()
+
+    def _run(self):
+        pythoncom.CoInitialize()
+        try:
+            shell = win32com.client.Dispatch("Shell.Application")
+            while True:
+                item = self._requests.get()
+                if item is None:
+                    break
+                path, response = item
+                response.put(self._lookup(shell, path))
+        finally:
+            pythoncom.CoUninitialize()
+
+    @staticmethod
+    def _lookup(shell, path: str) -> Optional[str]:
+        try:
+            folder = shell.Namespace(os.path.dirname(path))
+            if folder is None:
+                return None
+            item = folder.ParseName(os.path.basename(path))
+            if item is None:
+                return None
+            value = folder.GetDetailsOf(item, 305)  # "Availability status" column
+            return value or None
+        except Exception:
+            return None
+
+    def get_status(self, path: str, timeout: float = 3.0) -> Optional[str]:
+        response: "queue.Queue" = queue.Queue(maxsize=1)
+        self._requests.put((path, response))
+        try:
+            return response.get(timeout=timeout)
+        except queue.Empty:
+            return None
+
+    def close(self):
+        self._requests.put(None)
+
+
 class ICloudStatusChecker:
     """
     Checks iCloud sync status of files on Windows by reading file attributes, uses Windows API via ctypes
     """
     def __init__(self):
         self._available = platform.system() in ("Windows", "Microsoft")
+        self._shell_worker: Optional[_ShellStatusWorker] = None
+        self._shell_worker_lock = threading.Lock()
         if self._available:
             try:
                 self._k32 = ctypes.WinDLL('kernel32', use_last_error=True)
@@ -169,30 +234,29 @@ class ICloudStatusChecker:
             return None
 
     def shell_availability_status(self, path: str) -> Optional[str]:
-        if not self._available:
+        if not self._available or not _PYWIN32_AVAILABLE:
             return None
 
-        escaped = path.replace("'", "''")
-        ps_cmd = (
-            f"$p='{escaped}'; "
-            "$d=Split-Path $p; $n=Split-Path $p -Leaf; "
-            "$s=New-Object -ComObject Shell.Application; "
-            "$f=$s.Namespace($d); if($null -eq $f){exit 0}; "
-            "$i=$f.ParseName($n); if($null -eq $i){exit 0}; "
-            "$v=$f.GetDetailsOf($i,305); if($v){Write-Output $v}"
-        )
+        worker = self._shell_worker
+        if worker is None:
+            with self._shell_worker_lock:
+                worker = self._shell_worker
+                if worker is None:
+                    try:
+                        worker = self._shell_worker = _ShellStatusWorker()
+                    except Exception:
+                        return None
+        return worker.get_status(path)
 
-        try:
-            result = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", ps_cmd],
-                capture_output=True,
-                text=True,
-                timeout=3,
-            )
-            value = (result.stdout or "").strip()
-            return value or None
-        except Exception:
-            return None
+    def close(self):
+        """
+        Stops the background COM worker thread, if one was started. Not
+        required for correctness (it's a daemon thread), but useful for
+        tests and clean shutdown.
+        """
+        if self._shell_worker is not None:
+            self._shell_worker.close()
+            self._shell_worker = None
 
     def snapshot(self, path: str, skip_shell: bool = False) -> Optional[ICloudFileSnapshot]:
         """
