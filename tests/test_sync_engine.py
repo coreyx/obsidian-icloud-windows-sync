@@ -346,6 +346,54 @@ class TestPerFileQueue:
         assert engine.synchronizer.sync_wrapper.await_count == 2
 
 
+class TestRunMode:
+    @pytest.mark.asyncio
+    async def test_one_shot_mode_exits_after_seed_completes(self, engine, cfg, mock_log):
+        cfg.run_continuously = False
+        _write(_local(cfg, "note.md"))
+        engine.synchronizer.sync_wrapper = AsyncMock()
+
+        await asyncio.wait_for(engine.run(), timeout=5)
+
+        mock_log.startup.assert_called_with("ONE-SHOT MODE")
+        engine.synchronizer.sync_wrapper.assert_awaited_once_with("note.md")
+
+    @pytest.mark.asyncio
+    async def test_one_shot_mode_waits_for_echo_events_before_exiting(self, engine, cfg):
+        # A file created as a side effect of syncing (e.g. a conflict
+        # duplicate, or our own write triggering a watchdog event) gets its
+        # own queue *after* seeding has already enqueued everything else --
+        # run() must not return before that new queue drains too.
+        cfg.run_continuously = False
+        _write(_local(cfg, "note.md"))
+
+        async def fake_sync(rel):
+            if rel == "note.md":
+                engine.enqueue_file_event(FileSyncEvent("created", "note_CONFLICT.md"))
+
+        engine.synchronizer.sync_wrapper = AsyncMock(side_effect=fake_sync)
+
+        await asyncio.wait_for(engine.run(), timeout=5)
+
+        awaited_rels = {c.args[0] for c in engine.synchronizer.sync_wrapper.await_args_list}
+        assert awaited_rels == {"note.md", "note_CONFLICT.md"}
+
+    @pytest.mark.asyncio
+    async def test_daemon_mode_keeps_running_until_cancelled(self, engine, cfg, mock_log):
+        cfg.run_continuously = True
+        cfg.poll_interval = 0.01
+        engine.synchronizer.sync_wrapper = AsyncMock()
+
+        task = asyncio.create_task(engine.run())
+        await asyncio.sleep(0.1)
+        assert not task.done()
+
+        task.cancel()
+        await asyncio.wait_for(task, timeout=1)
+
+        mock_log.startup.assert_called_with("DAEMON MODE")
+
+
 class TestWatcherScopeAndSuppression:
     def test_observer_watches_only_local_and_icloud(self, engine, cfg):
         with patch("obsidian_sync.sync_engine.Observer") as observer_cls:

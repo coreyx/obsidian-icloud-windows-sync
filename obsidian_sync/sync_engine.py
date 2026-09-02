@@ -237,7 +237,7 @@ class SyncEngine:
         await self.log.cleanup_old_logs()
         self.log.init_log_file()
         self.validate_config()
-        self.log.startup("DAEMON MODE")
+        self.log.startup("DAEMON MODE" if self.config.run_continuously else "ONE-SHOT MODE")
         self.hasher.load_state()
 
         self.loop = asyncio.get_running_loop()
@@ -248,6 +248,23 @@ class SyncEngine:
         try:
             observer.start()
             await self.seed_existing_files()
+
+            if not self.config.run_continuously:
+                # Wait for every seeded file's queue to drain. Our own writes
+                # (e.g. a pull) can trigger a watchdog echo event that queues
+                # more work, and a conflict resolution can create a brand-new
+                # file with its own queue -- keep looping until a full pass
+                # finds no queue we haven't already waited on.
+                waited: set[str] = set()
+                while True:
+                    pending = {
+                        rel: q for rel, q in self.file_queues.items() if rel not in waited
+                    }
+                    if not pending:
+                        break
+                    await asyncio.gather(*(q.join() for q in pending.values()))
+                    waited.update(pending.keys())
+                return
 
             while True:
                 try:
