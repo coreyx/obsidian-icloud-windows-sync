@@ -49,7 +49,7 @@ graph TD
 ### Stop Mechanism
 
 Primary path is **cooperative**, not signal-based. A design review found `CTRL_BREAK_EVENT`/`SIGBREAK` unreliable from a windowed/no-console PyInstaller tray exe, since `GenerateConsoleCtrlEvent` typically requires the *sender* to have a console attached. Instead:
-- `process_manager.py` writes an empty sentinel file at `<daemon's logs_dir>/stop-<pid>.request` on Stop.
+- `process_manager.py` writes an empty sentinel file at `<daemon's logs_dir>/stop.request` on Stop. **Not PID-scoped**, confirmed necessary by hand during implementation: the installed `obsidian-sync.exe` console-script launcher spawns the interpreter as a *child* process with a different PID than `subprocess.Popen` reports for the launcher, so a requester can't predict the running daemon's own `os.getpid()`. One logs_dir is already scoped to one daemon instance, so a fixed filename is sufficient.
 - `sync_engine.py`'s daemon loop replaces its single `await asyncio.sleep(poll_interval)` with ~0.5s-increment sleeps that check for the stop file each tick, `break`ing (not raising) into the existing `finally:` cleanup — no change to that exception/cleanup structure.
 - The one-shot drain path races the same stop-file check against `asyncio.gather(...)` so Stop is responsive during Run Once too.
 - Per-file work runs as independent `file_worker` tasks the outer loop never blocks on, so noticing the stop file is fast regardless of an individual file's iCloud wait duration; the existing `finally:`'s `worker.cancel()` promptly unwinds in-flight `asyncio.sleep`-based waits (`CancelledError` is a `BaseException`, not swallowed by `sync_wrapper`'s `except Exception`).
@@ -114,7 +114,7 @@ See `tech.md`.
 Exit codes (existing, unchanged): `0` = graceful shutdown (daemon stopped, or one-shot completed); `1` = startup/config error.
 
 ### Stop-request file
-- Path: `<config.logs_dir>/stop-<pid>.request` (pid = the daemon's own PID, known to the tray via `tray_state.json`).
+- Path: `<config.logs_dir>/stop.request` -- deliberately not PID-scoped (see Stop Mechanism above for why); the tray computes it from `logs_dir` alone, which it already knows from `tray_state.json`.
 - Written by: `process_manager.py`, on Stop. Read by: `sync_engine.py` (existence check only). The daemon does not need to delete it (it's exiting); the tray defensively deletes any stale one before launching a new run for the same logs_dir.
 
 ### Process launch contract

@@ -234,7 +234,14 @@ class SyncEngine:
                 self.enqueue_file_event(FileSyncEvent("initial", rel))
 
     def stop_file_path(self) -> str:
-        return os.path.join(self.config.logs_dir, f"stop-{os.getpid()}.request")
+        # Deliberately not PID-scoped: an installed console_scripts launcher
+        # (obsidian-sync.exe) can spawn the actual interpreter as a child
+        # process with a different PID than subprocess.Popen reports for the
+        # launcher, so a requester can't reliably predict this process's own
+        # os.getpid(). A single logs_dir is already scoped to one daemon
+        # instance, so a fixed filename is sufficient and avoids that
+        # mismatch entirely.
+        return os.path.join(self.config.logs_dir, "stop.request")
 
     async def _wait_or_stop(self, awaitable, stop_file: str, poll_seconds: float = 0.5) -> bool:
         """

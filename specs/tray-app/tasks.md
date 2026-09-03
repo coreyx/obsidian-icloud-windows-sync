@@ -12,7 +12,7 @@
   - _Requirements: 2.5_
 
 - [x] 3. Add the cooperative stop-file watcher to the daemon
-  - `obsidian_sync/sync_engine.py`: daemon loop's `await asyncio.sleep(poll_interval)` becomes ~0.5s-increment sleeps checking `<logs_dir>/stop-<pid>.request`, `break`s into existing `finally:` cleanup on detection
+  - `obsidian_sync/sync_engine.py`: daemon loop's `await asyncio.sleep(poll_interval)` becomes ~0.5s-increment sleeps checking `<logs_dir>/stop.request` (not PID-scoped -- an installed console-script launcher can spawn the interpreter as a child with a different PID, confirmed by hand during implementation), `break`s into existing `finally:` cleanup on detection
   - One-shot drain path races the same stop-file check against `asyncio.gather(...)`
   - Keep the one-line `signal.signal(signal.SIGBREAK, signal.default_int_handler)` as defense-in-depth
   - Unit test: bounded-time exit with a pre-existing stop file; integration test: real subprocess, externally-written stop file, graceful-shutdown log line within timeout
@@ -31,7 +31,7 @@
   - Unit tests for each module (mocked subprocess/registry/process APIs)
   - _Requirements: 2.1-2.7, 3.1, 3.2, 4.1, 4.2, 5.2-5.4_
 
-- [ ] 6. Build tray UI: icon, menu, app wiring, options window
+- [x] 6. Build tray UI: icon, menu, app wiring, options window
   - `icons.py` (+ a real icon asset, idle/running states), `menu.py`, `app.py`, `__main__.py`: single-instance mutex, `icon.run_detached()` + `root.mainloop()` threading model, "Start on Windows startup" + "Auto-start sync on launch" checkable items (latter defaults on, auto-starts after startup-state resolves to Idle)
   - `options_window.py`: tkinter form for Paths/Sync(minus `run_continuously`)/Logging/Ignore, path-existence validation blocking Save, "applies on next start" notice while something is running
   - Manual verification per `testing.md`'s checklist (GUI event loop isn't practically unit-testable)

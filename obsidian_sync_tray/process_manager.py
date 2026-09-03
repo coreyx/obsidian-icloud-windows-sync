@@ -132,7 +132,10 @@ class ProcessManager:
             self._reset_to_idle()
             return
 
-        stop_file = os.path.join(self._logs_dir, f"stop-{self._pid}.request")
+        # Not PID-scoped -- see SyncEngine.stop_file_path's docstring for why
+        # (an installed launcher can spawn the interpreter as a child
+        # process with a different PID than Popen reports for it).
+        stop_file = os.path.join(self._logs_dir, "stop.request")
         try:
             with open(stop_file, "w"):
                 pass

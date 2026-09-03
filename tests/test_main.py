@@ -1,7 +1,10 @@
+import shutil
 import sys
 import time
 import subprocess
 from unittest.mock import patch
+
+import pytest
 
 from obsidian_sync.__main__ import main
 from obsidian_sync.config import SyncConfig
@@ -104,7 +107,14 @@ class TestGracefulStopFile:
             time.sleep(1.5)  # let the daemon reach its main loop
             assert proc.poll() is None, "daemon exited before Stop was requested"
 
-            stop_file = logs_dir / f"stop-{proc.pid}.request"
+            # Deliberately NOT PID-named -- see SyncEngine.stop_file_path's
+            # docstring. Confirmed by hand: the installed obsidian-sync.exe
+            # console-script launcher spawns the interpreter as a *child*
+            # process with a different PID than Popen reports for the
+            # launcher, so a requester can't predict the running daemon's
+            # own os.getpid(). A stop file named after the launcher's PID
+            # would silently never be noticed.
+            stop_file = logs_dir / "stop.request"
             stop_file.write_text("")
 
             out, _ = proc.communicate(timeout=15)
@@ -115,4 +125,38 @@ class TestGracefulStopFile:
 
         assert proc.returncode == 0, out
         assert "Stop requested, saving state..." in out
+        assert "Graceful shutdown complete" in out
+
+    def test_stop_file_works_through_the_installed_console_script_launcher(self, tmp_path):
+        # Regression guard for the PID-mismatch bug above: this launches via
+        # the actual installed `obsidian-sync` command (the same launcher
+        # the tray app uses), not `python -m obsidian_sync`, which runs the
+        # interpreter in-process and would not have caught it.
+        exe = shutil.which("obsidian-sync")
+        if not exe:
+            pytest.skip("obsidian-sync console script is not on PATH (package not installed)")
+
+        config_path = _write_config(tmp_path, run_continuously=True)
+        logs_dir = tmp_path / "logs"
+
+        proc = subprocess.Popen(
+            [exe, "--config", config_path],
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            time.sleep(1.5)
+            assert proc.poll() is None, "daemon exited before Stop was requested"
+
+            (logs_dir / "stop.request").write_text("")
+
+            out, _ = proc.communicate(timeout=15)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, _ = proc.communicate(timeout=5)
+            raise
+
+        assert proc.returncode == 0, out
         assert "Graceful shutdown complete" in out

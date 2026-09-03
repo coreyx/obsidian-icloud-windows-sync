@@ -102,7 +102,7 @@ class TestStateTransitions:
             manager.stop()
 
         assert manager.state == pm.State.IDLE
-        stop_file = os.path.join(fake_config.logs_dir, "stop-555.request")
+        stop_file = os.path.join(fake_config.logs_dir, "stop.request")
         assert os.path.exists(stop_file)
         assert ts.read(isolated_state_path) is None
         fake_proc.kill.assert_not_called()
