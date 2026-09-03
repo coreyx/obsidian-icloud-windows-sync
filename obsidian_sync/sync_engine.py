@@ -127,6 +127,25 @@ class SyncEngine:
         rel = self.rel_from_root(path, root)
         if rel is None or not self.should_sync_rel(rel):
             return
+        if event_type in ("deleted", "moved_from") and rel not in self.hasher.state:
+            # watchdog can't stat a path that's already gone, so on Windows a
+            # whole-directory delete (or a move away from one) can be
+            # misreported as a *file* event for the directory's own path
+            # (is_directory=False) -- confirmed by hand: deleting a subfolder
+            # produced a "deleted" event for the bare folder path itself,
+            # which this app then tried to sync as an ordinary file, forever
+            # "restoring" something that can never exist. A rel_path that
+            # was never a real, hashed file (never a key in the hasher's
+            # state cache) but is reported gone is exactly that case -- the
+            # only other way to get here is a brand-new file deleted before
+            # its first sync ever ran, which is also safe to drop: nothing
+            # was ever propagated for it to begin with.
+            self.log.info(
+                "IGNORED",
+                f"Ignoring {event_type} for {self.config.disp(rel)}: never a tracked file (likely a directory)",
+                level="verbose",
+            )
+            return
         if self.loop is None or self.loop.is_closed():
             return
         root_name = self.root_label(root)

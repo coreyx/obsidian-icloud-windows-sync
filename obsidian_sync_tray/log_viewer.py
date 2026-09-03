@@ -44,7 +44,7 @@ TYPE_COLORS = {
     # info() -- cyan
     "INFO": CYAN, "HISTORY": CYAN, "HISTORY MISSING": CYAN, "ICLOUD_WAIT": CYAN,
     "ICLOUD_TRACE": CYAN, "RESOLVED": CYAN, "SKIP": CYAN, "QUEUE": CYAN,
-    "FS_EVENT": CYAN, "copy_to_disk": CYAN, "copy_to_icloud": CYAN, "copy_from_icloud": CYAN,
+    "FS_EVENT": CYAN, "copy_to_disk": CYAN, "copy_to_icloud": CYAN, "copy_from_icloud": CYAN, "IGNORED": GRAY,
     # success() -- green
     "CLEAN": GREEN, "DONE": GREEN, "SUCCESS": GREEN,
     # error() -- red

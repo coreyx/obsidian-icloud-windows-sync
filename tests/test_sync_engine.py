@@ -346,6 +346,65 @@ class TestPerFileQueue:
         assert engine.synchronizer.sync_wrapper.await_count == 2
 
 
+class TestIgnoresUntrackedGoneEvents:
+    # Regression coverage: on Windows, watchdog can't stat a path that's
+    # already gone, so deleting an entire subfolder can surface as a
+    # "deleted" event for the *folder's own path*, misreported as a file
+    # (is_directory=False) -- confirmed by hand against a real vault. The
+    # app then tried to sync that bogus path as an ordinary file, endlessly
+    # "restoring" something that could never exist. enqueue_path_event now
+    # drops "deleted"/"moved_from" events for a rel_path that was never a
+    # real, hashed file (never a key in hasher.state).
+
+    def test_deleted_event_for_a_path_never_tracked_as_a_file_is_ignored(self, engine, cfg):
+        phantom_dir = os.path.join(cfg.local_vault, "Test Folder")
+        assert "Test Folder" not in engine.hasher.state
+
+        engine.enqueue_path_event("deleted", phantom_dir, cfg.local_vault)
+
+        assert engine.file_queues == {}
+        assert engine.file_workers == {}
+        engine.log.info.assert_any_call(
+            "IGNORED",
+            "Ignoring deleted for Test Folder: never a tracked file (likely a directory)",
+            level="verbose",
+        )
+
+    def test_moved_from_event_for_a_path_never_tracked_as_a_file_is_ignored(self, engine, cfg):
+        phantom_dir = os.path.join(cfg.local_vault, "Old Folder")
+
+        engine.enqueue_path_event("moved_from", phantom_dir, cfg.local_vault)
+
+        assert engine.file_queues == {}
+        assert engine.file_workers == {}
+
+    @pytest.mark.asyncio
+    async def test_deleted_event_for_a_previously_tracked_file_still_syncs(self, engine, cfg):
+        engine.loop = asyncio.get_running_loop()
+        engine.hasher.state["real.md"] = {"L": {"hash": "abc", "mtime": 1, "size": 1}}
+        engine.synchronizer.sync_wrapper = AsyncMock()
+
+        real_path = os.path.join(cfg.local_vault, "real.md")
+        engine.enqueue_path_event("deleted", real_path, cfg.local_vault)
+        await asyncio.sleep(0)  # let call_soon_threadsafe's callback run
+
+        assert "real.md" in engine.file_queues
+
+    @pytest.mark.asyncio
+    async def test_created_event_for_a_brand_new_untracked_file_still_syncs(self, engine, cfg):
+        # The filter must never apply to "created"/"modified"/"moved_to" --
+        # a genuinely new file is *never* in hasher.state either (it hasn't
+        # been hashed yet), and this is the normal, common path.
+        engine.loop = asyncio.get_running_loop()
+        engine.synchronizer.sync_wrapper = AsyncMock()
+
+        new_path = os.path.join(cfg.local_vault, "brand_new.md")
+        engine.enqueue_path_event("created", new_path, cfg.local_vault)
+        await asyncio.sleep(0)
+
+        assert "brand_new.md" in engine.file_queues
+
+
 class TestRunMode:
     @pytest.mark.asyncio
     async def test_one_shot_mode_exits_after_seed_completes(self, engine, cfg, mock_log):
