@@ -18,7 +18,7 @@
   - Unit test: bounded-time exit with a pre-existing stop file; integration test: real subprocess, externally-written stop file, graceful-shutdown log line within timeout
   - _Requirements: 3.1, 3.2_
 
-- [ ] 4. Add `SyncConfig.to_dict()` / `save(path)` round-trip
+- [x] 4. Add `SyncConfig.to_dict()` / `save(path)` round-trip
   - `obsidian_sync/config.py`: mirror `from_yaml`'s nested `paths:`/`sync:`/`logging:`/`ignore:` shape exactly; `set[str]` fields → sorted lists; `run_continuously` round-trips untouched
   - Unit test: save → from_yaml reproduces equivalent values for every field
   - _Requirements: 7.3, 8.1_

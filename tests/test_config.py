@@ -238,3 +238,57 @@ class TestStateFilePath:
         result = cfg.state_file_path
         assert result.startswith(cfg.logs_dir)
         assert result.endswith("sync_state.json")
+
+#  to_dict / save round-trip
+
+class TestSaveRoundTrip:
+    def test_round_trip_preserves_all_fields(self, cfg, tmp_path):
+        cfg.ignore_patterns = ["*.tmp", "Templates/*"]
+        cfg.ignored_dirs = {".trash", ".fseventsd", ".custom"}
+        cfg.ignored_files = {".ds_store", "workspace.json"}
+        cfg.poll_interval = 7
+        cfg.console_level = "verbose"
+
+        out_path = tmp_path / "roundtrip.yaml"
+        cfg.save(str(out_path))
+        reloaded = SyncConfig.from_yaml(str(out_path))
+
+        for field_name in (
+            "local_vault", "icloud_vault", "history_dir", "logs_dir",
+            "run_continuously", "check_icloud_status", "poll_interval",
+            "stability_window", "stabilize_wait", "tiny_threshold",
+            "max_concurrent_io", "console_level", "shorter_paths",
+            "max_display_length", "log_retention",
+        ):
+            assert getattr(reloaded, field_name) == getattr(cfg, field_name), field_name
+
+        assert reloaded.ignore_patterns == cfg.ignore_patterns
+        assert reloaded.ignored_dirs == cfg.ignored_dirs
+        assert reloaded.ignored_files == cfg.ignored_files
+
+    def test_run_continuously_round_trips_when_false(self, cfg, tmp_path):
+        # The tray app never edits this field directly, but save() must not
+        # silently reset or drop it regardless of its current value.
+        cfg.run_continuously = False
+        out_path = tmp_path / "roundtrip.yaml"
+        cfg.save(str(out_path))
+        assert SyncConfig.from_yaml(str(out_path)).run_continuously is False
+
+    def test_to_dict_serializes_sets_as_sorted_lists(self, cfg):
+        cfg.ignored_dirs = {"zzz", "aaa", "mmm"}
+        cfg.ignored_files = {"c.txt", "a.txt"}
+        data = cfg.to_dict()
+        assert data["ignore"]["dirs"] == ["aaa", "mmm", "zzz"]
+        assert data["ignore"]["files"] == ["a.txt", "c.txt"]
+
+    def test_to_dict_matches_from_yaml_section_shape(self, cfg):
+        data = cfg.to_dict()
+        assert set(data.keys()) == {"paths", "sync", "logging", "ignore"}
+        assert set(data["paths"].keys()) == {
+            "local_vault", "icloud_vault", "history_dir", "logs_dir",
+        }
+        assert set(data["sync"].keys()) == {
+            "run_continuously", "check_icloud_status", "poll_interval",
+            "stability_window", "stabilize_wait", "tiny_threshold",
+            "max_concurrent_io",
+        }

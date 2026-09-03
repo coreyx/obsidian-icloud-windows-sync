@@ -83,6 +83,53 @@ class SyncConfig:
             ignored_files=set(ignore.get("files", DEFAULT_IGNORED_FILES)),
         )
 
+    def to_dict(self) -> dict:
+        """
+        Serializes this config into the same nested dict shape `from_yaml`
+        reads, for round-tripping to a YAML file.
+
+        Returns:
+            dict: A dict with paths/sync/logging/ignore sections.
+        """
+        return {
+            "paths": {
+                "local_vault": self.local_vault,
+                "icloud_vault": self.icloud_vault,
+                "history_dir": self.history_dir,
+                "logs_dir": self.logs_dir,
+            },
+            "sync": {
+                "run_continuously": self.run_continuously,
+                "check_icloud_status": self.check_icloud_status,
+                "poll_interval": self.poll_interval,
+                "stability_window": self.stability_window,
+                "stabilize_wait": self.stabilize_wait,
+                "tiny_threshold": self.tiny_threshold,
+                "max_concurrent_io": self.max_concurrent_io,
+            },
+            "logging": {
+                "console_level": self.console_level,
+                "shorter_paths": self.shorter_paths,
+                "max_display_length": self.max_display_length,
+                "log_retention": self.log_retention,
+            },
+            "ignore": {
+                "patterns": list(self.ignore_patterns),
+                "dirs": sorted(self.ignored_dirs),
+                "files": sorted(self.ignored_files),
+            },
+        }
+
+    def save(self, path: str) -> None:
+        """
+        Writes this config to a YAML file in the same nested shape `from_yaml` reads.
+
+        Args:
+            path (str): The file path to write the YAML config to.
+        """
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(self.to_dict(), f, default_flow_style=False, sort_keys=False)
+
     @property
     def state_file_path(self) -> str:
         """
