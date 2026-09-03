@@ -5,13 +5,13 @@
   - Write this `tasks.md` itself
   - _Requirements: (all — this is the spec artifact task)_
 
-- [ ] 2. Add `--once` CLI flag to the daemon
+- [x] 2. Add `--once` CLI flag to the daemon
   - `obsidian_sync/__main__.py`: new argparse flag, forces one-shot for this invocation only
   - Do not read or write the config file's `run_continuously` value
   - Unit test: flag parsing + behavior; integration test: real subprocess exits 0 promptly
   - _Requirements: 2.5_
 
-- [ ] 3. Add the cooperative stop-file watcher to the daemon
+- [x] 3. Add the cooperative stop-file watcher to the daemon
   - `obsidian_sync/sync_engine.py`: daemon loop's `await asyncio.sleep(poll_interval)` becomes ~0.5s-increment sleeps checking `<logs_dir>/stop-<pid>.request`, `break`s into existing `finally:` cleanup on detection
   - One-shot drain path races the same stop-file check against `asyncio.gather(...)`
   - Keep the one-line `signal.signal(signal.SIGBREAK, signal.default_int_handler)` as defense-in-depth

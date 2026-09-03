@@ -1,4 +1,5 @@
 import sys
+import time
 import subprocess
 from unittest.mock import patch
 
@@ -78,3 +79,40 @@ class TestOnceFlag:
             timeout=30,
         )
         assert result.returncode == 0, result.stdout + result.stderr
+
+
+class TestGracefulStopFile:
+    def test_stop_file_gracefully_shuts_down_a_real_daemon_subprocess(self, tmp_path):
+        # The critical scenario for the tray app's Stop action: writing the
+        # stop file must lead to a clean exit (state saved, log flushed),
+        # not a hang or a hard kill. Both shutdown messages are logged at
+        # level="important", which always prints regardless of
+        # console_level, so stdout is a reliable, timing-independent signal
+        # here -- the on-disk log file is only flushed once something is
+        # actually buffered, which an idle/empty vault may never trigger
+        # mid-run.
+        config_path = _write_config(tmp_path, run_continuously=True)
+        logs_dir = tmp_path / "logs"
+
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "obsidian_sync", "--config", config_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            time.sleep(1.5)  # let the daemon reach its main loop
+            assert proc.poll() is None, "daemon exited before Stop was requested"
+
+            stop_file = logs_dir / f"stop-{proc.pid}.request"
+            stop_file.write_text("")
+
+            out, _ = proc.communicate(timeout=15)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, _ = proc.communicate(timeout=5)
+            raise
+
+        assert proc.returncode == 0, out
+        assert "Stop requested, saving state..." in out
+        assert "Graceful shutdown complete" in out

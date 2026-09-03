@@ -393,6 +393,59 @@ class TestRunMode:
 
         mock_log.startup.assert_called_with("DAEMON MODE")
 
+    @pytest.mark.asyncio
+    async def test_daemon_mode_exits_gracefully_when_stop_file_appears(self, engine, cfg, mock_log):
+        # The tray app's Stop action writes this file rather than sending a
+        # signal (unreliable from a windowed/no-console process) -- the
+        # daemon's own loop must notice it and shut down on its own, without
+        # needing to be cancelled from outside.
+        cfg.run_continuously = True
+        cfg.poll_interval = 0.05
+        engine.synchronizer.sync_wrapper = AsyncMock()
+
+        task = asyncio.create_task(engine.run())
+        await asyncio.sleep(0.1)
+        assert not task.done()
+
+        stop_file = engine.stop_file_path()
+        os.makedirs(os.path.dirname(stop_file), exist_ok=True)
+        with open(stop_file, "w"):
+            pass
+
+        await asyncio.wait_for(task, timeout=3)
+
+        assert task.done() and not task.cancelled()
+        assert any(
+            call.args[:2] == ("INFO", "Stop requested, saving state...")
+            for call in mock_log.warn.call_args_list
+        )
+
+    @pytest.mark.asyncio
+    async def test_one_shot_mode_exits_when_stop_file_appears_mid_wait(self, engine, cfg):
+        # A one-shot pass can be waiting on a slow per-file operation; Stop
+        # must still interrupt it rather than block until that finishes.
+        cfg.run_continuously = False
+        _write(_local(cfg, "note.md"))
+
+        never_finishes = asyncio.Event()
+
+        async def hang_forever(rel):
+            await never_finishes.wait()
+
+        engine.synchronizer.sync_wrapper = AsyncMock(side_effect=hang_forever)
+
+        task = asyncio.create_task(engine.run())
+        await asyncio.sleep(0.1)
+        assert not task.done()
+
+        stop_file = engine.stop_file_path()
+        os.makedirs(os.path.dirname(stop_file), exist_ok=True)
+        with open(stop_file, "w"):
+            pass
+
+        await asyncio.wait_for(task, timeout=3)
+        assert task.done() and not task.cancelled()
+
 
 class TestWatcherScopeAndSuppression:
     def test_observer_watches_only_local_and_icloud(self, engine, cfg):

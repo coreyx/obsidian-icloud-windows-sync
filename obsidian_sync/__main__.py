@@ -1,6 +1,7 @@
 import asyncio
 import argparse
 import os
+import signal
 import sys
 
 from .config import SyncConfig
@@ -38,6 +39,12 @@ def main():
     duplicates = DuplicateScanner(config, logger, disk_io)
     duplicates.scan_and_clean()
     engine = SyncEngine(config, logger, hasher, disk_io, duplicates)
+
+    # Defense-in-depth: the primary Stop mechanism is a cooperative stop-file
+    # the engine polls for (see SyncEngine.stop_file_path), but this also lets
+    # a manually-run console instance be interrupted with Ctrl+Break.
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)
 
     try:
         asyncio.run(engine.run())

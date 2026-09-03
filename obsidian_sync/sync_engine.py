@@ -233,6 +233,25 @@ class SyncEngine:
             if self.should_sync_rel(rel):
                 self.enqueue_file_event(FileSyncEvent("initial", rel))
 
+    def stop_file_path(self) -> str:
+        return os.path.join(self.config.logs_dir, f"stop-{os.getpid()}.request")
+
+    async def _wait_or_stop(self, awaitable, stop_file: str, poll_seconds: float = 0.5) -> bool:
+        """
+        Awaits `awaitable`, polling for `stop_file` every `poll_seconds`.
+
+        Returns True if the stop file appeared before `awaitable` completed
+        (in which case `awaitable`'s task is cancelled and abandoned), or
+        False if `awaitable` completed first.
+        """
+        task = asyncio.ensure_future(awaitable)
+        while not task.done():
+            if os.path.exists(stop_file):
+                task.cancel()
+                return True
+            await asyncio.sleep(poll_seconds)
+        return False
+
     async def run(self):
         await self.log.cleanup_old_logs()
         self.log.init_log_file()
@@ -245,6 +264,7 @@ class SyncEngine:
         loop = asyncio.get_running_loop()
         last_save = loop.time()
 
+        stop_file = self.stop_file_path()
         try:
             observer.start()
             await self.seed_existing_files()
@@ -254,7 +274,9 @@ class SyncEngine:
                 # (e.g. a pull) can trigger a watchdog echo event that queues
                 # more work, and a conflict resolution can create a brand-new
                 # file with its own queue -- keep looping until a full pass
-                # finds no queue we haven't already waited on.
+                # finds no queue we haven't already waited on. Also races
+                # against a stop-request file so an external Stop (e.g. from
+                # a tray app) can interrupt a still-running one-shot pass.
                 waited: set[str] = set()
                 while True:
                     pending = {
@@ -262,7 +284,12 @@ class SyncEngine:
                     }
                     if not pending:
                         break
-                    await asyncio.gather(*(q.join() for q in pending.values()))
+                    stopped = await self._wait_or_stop(
+                        asyncio.gather(*(q.join() for q in pending.values())), stop_file
+                    )
+                    if stopped:
+                        self.log.warn("INFO", "Stop requested, saving state...", level="important")
+                        break
                     waited.update(pending.keys())
                 return
 
@@ -282,7 +309,11 @@ class SyncEngine:
                     self.log.error("ERROR", f"Unexpected error in main loop: {outer}")
                     self.log.error("TRACEBACK", traceback.format_exc())
 
-                await asyncio.sleep(self.config.poll_interval)
+                # Sleep in short increments (independent of poll_interval) so
+                # a stop request (e.g. from a tray app) is noticed quickly.
+                if await self._wait_or_stop(asyncio.sleep(self.config.poll_interval), stop_file):
+                    self.log.warn("INFO", "Stop requested, saving state...", level="important")
+                    break
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             self.log.warn("INFO", "Shutdown requested, saving state...", level="important")
@@ -292,5 +323,5 @@ class SyncEngine:
             for worker in self.file_workers.values():
                 worker.cancel()
             self.hasher.save_state()
-            self.log.flush()
             self.log.success("DONE", "Graceful shutdown complete.", level="important")
+            self.log.flush()
