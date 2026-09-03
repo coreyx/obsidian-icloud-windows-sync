@@ -10,7 +10,7 @@ A new sibling package, `obsidian_sync_tray/`, wraps the existing `obsidian_sync`
 - **`__main__.py`** — single-instance mutex check (`win32event.CreateMutex`), builds the Tk root + tray `Icon`, starts `icon.run_detached()` then `root.mainloop()`.
 - **`app.py`** — wires the tray `Icon` and Tk root together; owns `root.after(0, ...)` marshaling; owns Exit sequencing.
 - **`menu.py`** — pystray `Menu`/`MenuItem` construction and enabled/disabled logic per state.
-- **`process_manager.py`** — locates the daemon exe (installed path → PATH → dev fallback), launches it detached (`CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`), implements Stop (stop-file + poll + kill fallback) and Run Once (`--once`).
+- **`process_manager.py`** — locates the daemon exe (installed path → PATH → dev fallback), launches it detached (`CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`), implements Stop (stop-file + poll + kill fallback) and Run Once (`--once`). Installed-path lookup expects the daemon in a `daemon/` subfolder next to the tray exe (`<install root>\daemon\obsidian-sync.exe`), not flattened alongside it — each is its own PyInstaller onedir bundle with its own `_internal/` dependency tree, and flattening both into one directory would collide their same-named `_internal` folders.
 - **`tray_state.py`** — reads/writes `tray_state.json`; validates a recorded PID is alive *and* is actually the expected exe (`QueryFullProcessImageName`), not PID alone.
 - **`autostart.py`** — HKCU Run-key get/set/remove via `winreg`.
 - **`options_window.py`** — tkinter `Toplevel` form bound to a `SyncConfig`; Save validates paths exist first.
@@ -150,7 +150,7 @@ Transient; "a process the tray believes is currently running."
 {
   "pid": 12345,
   "mode": "daemon",
-  "exe_path": "C:\\Users\\<user>\\AppData\\Local\\Programs\\obsidian-sync\\obsidian-sync.exe",
+  "exe_path": "C:\\Users\\<user>\\AppData\\Local\\Programs\\obsidian-sync\\daemon\\obsidian-sync.exe",
   "logs_dir": "C:\\Users\\<user>\\AppData\\Local\\obsidian-sync\\Logs",
   "started_at": "2026-09-02T10:15:00"
 }

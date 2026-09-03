@@ -37,7 +37,7 @@
   - Manual verification per `testing.md`'s checklist (GUI event loop isn't practically unit-testable)
   - _Requirements: 1.1-1.3, 2.1-2.7, 5.1-5.4, 6.1-6.4, 7.1-7.3, 8.1-8.3_
 
-- [ ] 7. Packaging: dependencies and PyInstaller specs
+- [x] 7. Packaging: dependencies and PyInstaller specs
   - `pyproject.toml`: add `pystray`, `pillow` (win32-gated), `[project.optional-dependencies].build = ["pyinstaller"]`, second entry point `obsidian-sync-tray`, update `packages.find`
   - `installer/obsidian_sync_daemon.spec`, `installer/obsidian_sync_tray.spec`: onedir, hidden-imports/collect-all settings per `tech.md`
   - Frozen-build checklist: COM worker functions, no `obsidian_sync.logger` crash, watchdog events fire

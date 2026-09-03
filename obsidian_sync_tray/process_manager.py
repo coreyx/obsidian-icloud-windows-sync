@@ -48,9 +48,16 @@ class ProcessManager:
     # -- daemon exe discovery --
 
     def find_daemon_exe(self) -> Optional[str]:
-        """Installed path (next to this frozen exe) -> PATH -> None (dev fallback: python -m)."""
+        """
+        Installed path -> PATH -> None (dev fallback: python -m).
+
+        Each is its own PyInstaller onedir bundle with its own _internal/
+        dependency tree, so the installer places the daemon in a `daemon/`
+        subfolder next to the tray exe rather than flattening both into one
+        directory (which would collide their same-named _internal folders).
+        """
         if getattr(sys, "frozen", False):
-            candidate = os.path.join(os.path.dirname(sys.executable), DAEMON_EXE_NAME)
+            candidate = os.path.join(os.path.dirname(sys.executable), "daemon", DAEMON_EXE_NAME)
             if os.path.exists(candidate):
                 return candidate
         found = shutil.which("obsidian-sync")

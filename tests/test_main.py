@@ -2,7 +2,7 @@ import shutil
 import sys
 import time
 import subprocess
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -160,3 +160,59 @@ class TestGracefulStopFile:
 
         assert proc.returncode == 0, out
         assert "Graceful shutdown complete" in out
+
+
+class TestUnicodeConsoleOutput:
+    def test_main_forces_utf8_on_stdout_and_stderr(self, tmp_path, monkeypatch):
+        # logger.py prints Unicode status symbols (e.g. the "new file" icon)
+        # unconditionally. Whenever stdout isn't a real UTF-8 console --
+        # piped, or a console-subsystem exe launched with CREATE_NO_WINDOW
+        # (as the tray app does) -- it can default to the legacy ANSI
+        # codepage, which can't encode those symbols and crashes the sync
+        # task mid-run. main() must reconfigure both streams to UTF-8 before
+        # anything else can log.
+        config_path = _write_config(tmp_path, run_continuously=True)
+        monkeypatch.setattr(sys, "argv", ["obsidian-sync", "--config", config_path, "--once"])
+
+        fake_stdout = MagicMock()
+        fake_stderr = MagicMock()
+        with patch("obsidian_sync.__main__.sys.stdout", fake_stdout), \
+             patch("obsidian_sync.__main__.sys.stderr", fake_stderr), \
+             patch("asyncio.run"):
+            main()
+
+        fake_stdout.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+        fake_stderr.reconfigure.assert_called_once_with(encoding="utf-8", errors="replace")
+
+    def test_main_does_not_crash_when_stdout_is_none(self, tmp_path, monkeypatch):
+        # A windowed/no-console process (the tray, if it ever imported this
+        # path) has sys.stdout is None; the reconfigure step must not crash
+        # in that case either.
+        config_path = _write_config(tmp_path, run_continuously=True)
+        monkeypatch.setattr(sys, "argv", ["obsidian-sync", "--config", config_path, "--once"])
+
+        with patch("obsidian_sync.__main__.sys.stdout", None), \
+             patch("obsidian_sync.__main__.sys.stderr", None), \
+             patch("asyncio.run"):
+            main()  # must not raise
+
+    def test_real_subprocess_does_not_crash_on_unicode_log_symbols_when_piped(self, tmp_path):
+        # Regression test for the real bug: a genuinely new iCloud-only file
+        # triggers logger.new()'s Unicode "○" icon. With stdout piped
+        # (non-console, as when the tray launches this without inheriting a
+        # real console), this used to raise UnicodeEncodeError under the
+        # legacy codepage and crash that file's sync task.
+        config_path = _write_config(tmp_path, run_continuously=True)
+        icloud_dir = tmp_path / "icloud"
+        (icloud_dir / "new_note.md").write_text("hello from a real new file\n", encoding="utf-8")
+
+        result = subprocess.run(
+            [sys.executable, "-m", "obsidian_sync", "--config", config_path, "--once"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "UnicodeEncodeError" not in (result.stdout + result.stderr)
+        assert (tmp_path / "local" / "new_note.md").exists()

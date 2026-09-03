@@ -235,11 +235,18 @@ class TestDaemonExeDiscovery:
         with patch("obsidian_sync_tray.process_manager.shutil.which", return_value=None):
             assert manager.find_daemon_exe() is None
 
-    def test_prefers_installed_exe_next_to_frozen_tray_exe(self, isolated_state_path, monkeypatch, tmp_path):
+    def test_prefers_installed_exe_in_daemon_subfolder_next_to_frozen_tray_exe(
+        self, isolated_state_path, monkeypatch, tmp_path
+    ):
+        # Each is its own PyInstaller onedir bundle with its own _internal/
+        # tree, so the installer nests the daemon under daemon/ rather than
+        # flattening both into one directory (which would collide their
+        # same-named _internal folders).
         monkeypatch.setattr(sys, "frozen", True, raising=False)
         install_dir = tmp_path / "install"
-        install_dir.mkdir()
-        daemon_exe = install_dir / pm.DAEMON_EXE_NAME
+        daemon_dir = install_dir / "daemon"
+        daemon_dir.mkdir(parents=True)
+        daemon_exe = daemon_dir / pm.DAEMON_EXE_NAME
         daemon_exe.write_text("")
         monkeypatch.setattr(sys, "executable", str(install_dir / "obsidian-sync-tray.exe"))
 

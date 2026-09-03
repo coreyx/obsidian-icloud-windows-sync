@@ -15,6 +15,20 @@ def main():
     """
     Entry point for the Obsidian iCloud Windows Sync.
     """
+    # The logger prints Unicode status symbols (e.g. the "new file" icon)
+    # unconditionally. Whenever stdout isn't a real UTF-8 console -- piped,
+    # redirected, or a console-subsystem exe launched with CREATE_NO_WINDOW
+    # (as the tray app does) -- it can default to the legacy ANSI codepage,
+    # which can't encode those symbols and crashes the sync task mid-run.
+    # Force UTF-8 once at startup so this can't happen regardless of the
+    # caller's environment.
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None:
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
     parser = argparse.ArgumentParser(description="Obsidian iCloud Windows Sync")
     parser.add_argument("-c", "--config", default="config.yaml", help="Path to config YAML file (default: config.yaml)")
     parser.add_argument(
