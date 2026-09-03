@@ -156,6 +156,20 @@ Each sync pass walks the union of all three directories and applies these rules:
 | `C` missing, `L != H` | Local changed → push `L` → `C` |
 | `L` and `C` missing | Remove orphaned `H` |
 
+In plain English, row by row:
+
+- **`L` only** — You created a file only on your PC. The daemon waits a moment (`stability_window`) in case you're still typing or it's mid-save, then copies it up to iCloud and saves a reference copy in History. One gate applies here: a brand-new file below `tiny_threshold` (8 bytes by default — e.g. an Obsidian note you just created and haven't typed into yet) is left alone rather than pushed, so an empty scratch note doesn't get seeded to iCloud/History the instant it's created. It's not stuck forever — the very next real edit to it re-triggers this same check, and once it's past the threshold it pushes normally. Files under `.obsidian/` (app config) are exempt from this and only need 1 byte.
+- **`C` only** — A file showed up in iCloud that isn't on your PC yet (synced down from another device, say). The daemon waits for it to finish uploading, then copies it into your local vault and seeds a matching History snapshot.
+- **`L == C == H`** — Local, iCloud, and the last-known-good snapshot all match. Nothing changed, so the daemon does nothing.
+- **`L != H`, `C == H`** — You edited the file locally and iCloud still has the old version. The daemon pushes your local edit up to iCloud and updates History to match.
+- **`C != H`, `L == H`** — The file changed in iCloud (edited elsewhere) but your local copy is still the old version. The daemon pulls the iCloud version down over your local copy and updates History to match.
+- **`L != H`, `C != H`** — Both sides changed since the last sync: a real conflict. The daemon waits (`stabilize_wait`) to make sure neither side is still actively being edited, then keeps whichever version was modified more recently and saves the other one as a `_CONFLICT_<timestamp>` backup, so nothing is silently lost.
+- **`L` missing, `C == H`** — You deleted the file locally, and iCloud hasn't changed since the last sync. The daemon treats this as a real, deliberate delete and removes the file from iCloud and History too.
+- **`L` missing, `C != H`** — Your local copy is gone, but iCloud's has changed since the last time everything matched. Rather than assume you meant to delete it, the daemon treats iCloud's newer version as authoritative and restores it locally.
+- **`C` missing, `L == H`** — The file disappeared from iCloud (deleted elsewhere) and your local copy hasn't changed since the last sync. The daemon removes it locally and from History to match.
+- **`C` missing, `L != H`** — The file is gone from iCloud, but you've edited it locally since the last sync. The daemon assumes your local edit should win and pushes it back up to iCloud.
+- **`L` and `C` missing** — The file is gone from both your PC and iCloud, nothing left to reconcile. The daemon just cleans up the now-orphaned History snapshot.
+
 ### Key Protections
 
 - **Per-file event queues**: each file has dedicated queue and worker task for complete isolation
