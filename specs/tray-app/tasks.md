@@ -62,4 +62,5 @@
   - "View Live Log", "Open Sync Logs Folder", "Open Tray Log" menu items (`log_viewer.py`, `menu.py`, `app.py`)
   - Inno Setup uninstaller crash (`WizardSilent()` → `UninstallSilent()`)
   - Test-isolation leaks into the real `%APPDATA%` tray log and a literal `C:\fake\` directory
+  - Live Log window unclosable while Options was also open (`OptionsWindow.grab_set()` redirecting all pointer events application-wide, per documented Tcl/Tk `grab` semantics)
   - _Requirements: 2.5, 2.6, 12, 13_

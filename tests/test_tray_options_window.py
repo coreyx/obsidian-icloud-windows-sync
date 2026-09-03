@@ -41,6 +41,24 @@ ignore:
     return str(config_path)
 
 
+class TestModality:
+    def test_does_not_hold_an_application_wide_grab(self, root, tmp_path):
+        # Regression test: OptionsWindow used to call self.grab_set(), a
+        # *local* grab that Tcl/Tk documents as redirecting all pointer
+        # events application-wide to the grabbing window -- with the Live
+        # Log viewer as an independent sibling Toplevel, this made its
+        # close button unresponsive to real clicks whenever Options was
+        # also open (confirmed by hand; a local grab is not something an
+        # automated click-simulation reliably reproduces, so this asserts
+        # the actual contract that fixes it: no grab is held at all).
+        window = OptionsWindow(root, config_path=_make_config_file(tmp_path))
+        try:
+            root.update()
+            assert root.grab_current() is None
+        finally:
+            window.destroy()
+
+
 class TestFieldSet:
     def test_run_continuously_never_appears_as_an_editable_field(self, root, tmp_path):
         window = OptionsWindow(root, config_path=_make_config_file(tmp_path))

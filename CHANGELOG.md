@@ -27,6 +27,7 @@
 - Stop permanently poisoned every subsequent Start: neither the daemon nor Stop ever deletes `stop.request` on a graceful exit, so a leftover file from any earlier run instantly killed the next daemon the moment it started. The tray now clears any stale stop file before launching.
 - Options (and the log viewer) opened but were never actually visible: `OptionsWindow` was transient-for the tray's permanently-hidden root, which on Windows leaves a `Toplevel` stuck "withdrawn" even after an explicit `deiconify()`. Removed the `transient()` call; it only makes sense against a real visible parent.
 - The Inno Setup uninstaller crashed with a runtime error dialog on every interactive uninstall (`WizardSilent()` is a Setup-only function; `UninstallSilent()` is the correct uninstall-context one).
+- The Live Log window couldn't be closed while Options was also open: Options held a local Tk grab, which per documented Tcl/Tk behavior redirects all pointer events application-wide to the grabbing window, leaving the independent Live Log window's close button unresponsive. Options no longer grabs input.
 
 ## [1.2.0] - 2026-07-05
 

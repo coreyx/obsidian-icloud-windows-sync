@@ -40,7 +40,13 @@ class OptionsWindow(tk.Toplevel):
         # OS level, even after an explicit deiconify() -- confirmed by hand.
         # transient() only makes sense when the master is a real visible
         # window, which ours never is.
-        self.grab_set()
+        #
+        # Also deliberately no self.grab_set(): a local grab redirects ALL
+        # pointer events application-wide to the grabbing window (this is
+        # documented Tcl/Tk `grab` behavior, not a bug) -- with the Live Log
+        # viewer as an independent sibling Toplevel, an active grab here
+        # made its close button unclickable whenever Options was also open.
+        # Nothing in this app needs Options to be modal.
         self.focus_set()
 
     # -- UI construction --
