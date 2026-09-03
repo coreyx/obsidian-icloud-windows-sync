@@ -202,6 +202,28 @@ class TestLogMethods:
         out = capsys.readouterr().out
         assert "NEW" in out
 
+#  startup
+
+class TestStartup:
+    def test_banner_is_persisted_to_the_log_file(self, cfg, tmp_path, capsys):
+        # Previously startup() only printed the banner -- it never reached
+        # the log file, so a log viewer replaying the file would never show
+        # it. Every printed line must now also land in the buffer.
+        log = SyncLogger(cfg)
+        log.log_file = str(tmp_path / "test.log")
+        log.startup("DAEMON MODE")
+        capsys.readouterr()  # drain console output, not under test here
+
+        assert len(log._buffer) == 7  # divider, title, mode, local, icloud, log, divider
+        assert any("Obsidian Sync" in line and "[BANNER_TITLE]" in line for line in log._buffer)
+        assert any("DAEMON MODE" in line and "[BANNER]" in line for line in log._buffer)
+
+    def test_banner_before_init_log_file_is_a_silent_noop_for_the_file(self, cfg, capsys):
+        log = SyncLogger(cfg)
+        log.startup("DAEMON MODE")
+        capsys.readouterr()
+        assert log._buffer == []
+
 #  init_log_file
 
 class TestInitLogFile:
@@ -213,6 +235,17 @@ class TestInitLogFile:
         assert log.log_file.endswith(".log")
         assert log.log_file.startswith(cfg.logs_dir)
         assert os.path.exists(os.path.dirname(log.log_file))
+
+    def test_is_idempotent(self, cfg):
+        # __main__.py now calls this before the duplicate scan, and
+        # SyncEngine.run() also calls it later in the same process (for
+        # callers that invoke run() directly, bypassing __main__.py) --
+        # the second call must not silently start a new log file mid-run.
+        log = SyncLogger(cfg)
+        log.init_log_file()
+        first_path = log.log_file
+        log.init_log_file()
+        assert log.log_file == first_path
 
 #  list_log_files
 

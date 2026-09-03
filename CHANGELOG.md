@@ -28,6 +28,7 @@
 - Options (and the log viewer) opened but were never actually visible: `OptionsWindow` was transient-for the tray's permanently-hidden root, which on Windows leaves a `Toplevel` stuck "withdrawn" even after an explicit `deiconify()`. Removed the `transient()` call; it only makes sense against a real visible parent.
 - The Inno Setup uninstaller crashed with a runtime error dialog on every interactive uninstall (`WizardSilent()` is a Setup-only function; `UninstallSilent()` is the correct uninstall-context one).
 - The Live Log window couldn't be closed while Options was also open: Options held a local Tk grab, which per documented Tcl/Tk behavior redirects all pointer events application-wide to the grabbing window, leaving the independent Live Log window's close button unresponsive. Options no longer grabs input.
+- The Live Log window showed plain, uncolored text and was missing the startup banner and the duplicate-scan messages ("Scanning for conflict/duplicate files...", "No duplicates found.") entirely -- the latter two ran before the log file was even created, so they never reached disk. `init_log_file()` now runs before the duplicate scan (and is idempotent), the startup banner is now written to the log file too, and the Live Log window colors each line to match the console's own scheme (e.g. INFO/PULL cyan, CLEAN/DONE green, warnings yellow, errors red) based on its `[TYPE]` label.
 
 ## [1.2.0] - 2026-07-05
 

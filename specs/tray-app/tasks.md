@@ -63,4 +63,5 @@
   - Inno Setup uninstaller crash (`WizardSilent()` → `UninstallSilent()`)
   - Test-isolation leaks into the real `%APPDATA%` tray log and a literal `C:\fake\` directory
   - Live Log window unclosable while Options was also open (`OptionsWindow.grab_set()` redirecting all pointer events application-wide, per documented Tcl/Tk `grab` semantics)
+  - Live Log window showed plain uncolored text and was missing the startup banner and duplicate-scan lines (`obsidian_sync/__main__.py`, `logger.py`, `obsidian_sync_tray/log_viewer.py`)
   - _Requirements: 2.5, 2.6, 12, 13_

@@ -162,6 +162,37 @@ class TestGracefulStopFile:
         assert "Graceful shutdown complete" in out
 
 
+class TestEarlyLogInit:
+    def test_duplicate_scan_and_startup_banner_reach_the_log_file(self, tmp_path):
+        # Regression test: init_log_file() used to happen inside
+        # SyncEngine.run(), which runs after DuplicateScanner.scan_and_clean()
+        # in __main__.py -- so scan_and_clean()'s "Scanning..."/"CLEAN No
+        # duplicates found." messages, and later the startup banner, were
+        # silently dropped by write_to_file()'s "no log file yet" guard.
+        # Real subprocess, since main()'s early setup isn't easily observed
+        # by mocking asyncio.run in-process without also skipping the run()
+        # call that used to do the (now redundant, but still present)
+        # init_log_file().
+        config_path = _write_config(tmp_path, run_continuously=False)
+
+        result = subprocess.run(
+            [sys.executable, "-m", "obsidian_sync", "--config", config_path, "--once"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+        logs_dir = tmp_path / "logs"
+        log_files = list(logs_dir.glob("sync_*.log"))
+        assert len(log_files) == 1, log_files
+        content = log_files[0].read_text(encoding="utf-8")
+
+        assert "Scanning for conflict/duplicate files" in content
+        assert "No duplicates found." in content
+        assert "Obsidian Sync" in content  # startup banner
+
+
 class TestUnicodeConsoleOutput:
     def test_main_forces_utf8_on_stdout_and_stderr(self, tmp_path, monkeypatch):
         # logger.py prints Unicode status symbols (e.g. the "new file" icon)

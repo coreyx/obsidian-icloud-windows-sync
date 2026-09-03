@@ -48,6 +48,13 @@ def main():
         config.run_continuously = False
 
     logger = SyncLogger(config)
+    # Established before the duplicate scan (not just inside engine.run(),
+    # which used to run after it) so scan_and_clean()'s messages -- and the
+    # startup banner printed below -- actually reach the log file instead of
+    # silently no-op'ing on write_to_file()'s "no log file yet" guard.
+    if config.logs_dir:
+        os.makedirs(config.logs_dir, exist_ok=True)
+    logger.init_log_file()
     hasher = FileHasher(config, logger)
     disk_io = DiskIO(config, logger)
     duplicates = DuplicateScanner(config, logger, disk_io)

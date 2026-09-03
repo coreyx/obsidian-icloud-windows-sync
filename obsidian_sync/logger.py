@@ -51,7 +51,15 @@ class SyncLogger:
     def init_log_file(self):
         """
         Generates and assigns the log file path using the current timestamp. Should be called after verifying the logs directory exists.
+
+        Idempotent: a caller that already established a log file earlier in
+        the run (e.g. __main__.py, before the duplicate scan) keeps that
+        path -- callers that run later (e.g. SyncEngine.run(), for callers
+        that invoke it directly without going through __main__.py) get a
+        no-op instead of silently starting a second log file mid-run.
         """
+        if self.log_file:
+            return
         ts = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         self.log_file = os.path.join(self.config.logs_dir, f"sync_{ts}.log")
 
@@ -253,19 +261,28 @@ class SyncLogger:
 
     def startup(self, mode_str: str):
         """
-        Prints the application startup banner and configuration summary.
+        Prints the application startup banner and configuration summary, and
+        persists it to the log file (msg_type "BANNER_TITLE" for the app
+        name, "BANNER" for everything else) so a log viewer replaying the
+        file sees the same banner a console session would have.
 
         Args:
             mode_str (str): The operation mode label (e.g., 'DAEMON MODE').
         """
         log_path = self.log_file or "(not initialized)"
-        print(Fore.WHITE + Style.BRIGHT + "=" * 75 + Style.RESET_ALL)
-        print(Fore.CYAN + Style.BRIGHT + "  Obsidian Sync" + Style.RESET_ALL)
-        print(Fore.WHITE + f"  Mode:   {mode_str}" + Style.RESET_ALL)
-        print(Fore.WHITE + f"  Local:  {self.config.local_vault}" + Style.RESET_ALL)
-        print(Fore.WHITE + f"  iCloud: {self.config.icloud_vault}" + Style.RESET_ALL)
-        print(Fore.WHITE + f"  Log:    {log_path}" + Style.RESET_ALL)
-        print(Fore.WHITE + Style.BRIGHT + "=" * 75 + Style.RESET_ALL)
+        divider = "=" * 75
+        lines = [
+            (divider, "BANNER", Fore.WHITE + Style.BRIGHT),
+            ("  Obsidian Sync", "BANNER_TITLE", Fore.CYAN + Style.BRIGHT),
+            (f"  Mode:   {mode_str}", "BANNER", Fore.WHITE),
+            (f"  Local:  {self.config.local_vault}", "BANNER", Fore.WHITE),
+            (f"  iCloud: {self.config.icloud_vault}", "BANNER", Fore.WHITE),
+            (f"  Log:    {log_path}", "BANNER", Fore.WHITE),
+            (divider, "BANNER", Fore.WHITE + Style.BRIGHT),
+        ]
+        for text, msg_type, color in lines:
+            print(color + text + Style.RESET_ALL)
+            self.write_to_file(msg_type, text)
 
     def list_log_files(self, logs_dir: str) -> list[str]:
         """
