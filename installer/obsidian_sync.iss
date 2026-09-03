@@ -14,7 +14,7 @@
 ; frozen-mode daemon-exe lookup expects exactly this layout.
 
 #define MyAppName "obsidian-sync"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "obsidian-sync"
 #define MyAppExeName "obsidian-sync-tray.exe"
 #define MyDaemonExeName "obsidian-sync.exe"

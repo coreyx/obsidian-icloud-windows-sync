@@ -1,4 +1,3 @@
-import tkinter as tk
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,13 +7,11 @@ from obsidian_sync_tray.app import TrayApp
 from obsidian_sync_tray.settings import TraySettings
 
 
-@pytest.fixture(scope="module")
-def root():
-    # See test_tray_options_window.py for why this is module-scoped.
-    r = tk.Tk()
-    r.withdraw()
-    yield r
-    r.destroy()
+@pytest.fixture
+def root(tk_root):
+    # Alias onto the session-shared Tk root (conftest.py) -- see its
+    # docstring for why only one tk.Tk() may ever be created per session.
+    return tk_root
 
 
 def _make_app(root, config_path="C:/fake/config.yaml", auto_start_daemon=False, prior_state=pm.State.IDLE):

@@ -137,3 +137,18 @@ def eng(cfg, mock_log):
         io = DiskIO(cfg, mock_log)
     h = FileHasher(cfg, mock_log); h.state = {}
     return FileSynchronizer(cfg, mock_log, h, io, MagicMock())
+
+@pytest.fixture(scope="session")
+def tk_root():
+    # Session-scoped and shared across every test module that needs a Tk
+    # root (test_tray_app.py, test_tray_options_window.py, ...). Creating a
+    # *second* tk.Tk() in one process after an earlier one was torn down
+    # corrupts Tcl's global interpreter state ("invalid command name
+    # tcl_findLibrary") -- a genuine Tcl/Tk limitation, not something
+    # per-module scoping fixes once more than one test file wants a root.
+    # Exactly one tk.Tk() must ever be created for the whole test session.
+    import tkinter as tk
+    r = tk.Tk()
+    r.withdraw()
+    yield r
+    r.destroy()

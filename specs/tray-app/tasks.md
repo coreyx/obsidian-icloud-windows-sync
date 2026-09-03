@@ -49,7 +49,7 @@
   - Installer checklist per `testing.md`
   - _Requirements: 9.1-9.4, 10.1-10.4_
 
-- [ ] 9. Docs and release notes
+- [x] 9. Docs and release notes
   - README: tray app usage, installer instructions
   - CHANGELOG.md: new version entry matching the project's existing Keep-a-Changelog-style format
   - Release Notes artifact

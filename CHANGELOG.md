@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.3.0] - 2026-09-02
+
+### Summary
+- New: a Windows system-tray app (`obsidian-sync-tray`) that wraps the console daemon -- Start/Stop/Run Once from a tray icon, an Options window for editing config without hand-editing YAML, autostart at login, and auto-start of syncing when the tray launches.
+- New: a Windows installer/uninstaller (`obsidian-sync-setup.exe`) that installs both the daemon and tray app without requiring Python.
+- Several real correctness and performance fixes to the daemon, found and fixed while building and hardening the above.
+
+### Added
+- `--once` CLI flag: forces a single one-shot sync pass for that invocation only, without touching the saved config file's `run_continuously` setting.
+- Cooperative stop-file protocol: the daemon polls for `<logs_dir>/stop.request` and shuts down gracefully (state saved, logs flushed) when it appears, independent of the caller's PID -- the mechanism the tray app's Stop action uses.
+- `SyncConfig.to_dict()` / `SyncConfig.save()`: round-trips a config back to the same YAML shape `from_yaml` reads, used by the Options window.
+- `obsidian_sync_tray` package: tray icon/menu (pystray), Options window (tkinter), autostart via the HKCU Run registry key, cross-session reattachment to an already-running daemon, and a small file-based logger that avoids `obsidian_sync.logger`'s console-only assumptions.
+- `installer/`: PyInstaller specs for both the daemon and tray app (onedir builds), an Inno Setup script producing a per-user installer/uninstaller, and a `build.ps1` orchestrating the whole pipeline.
+- `specs/tray-app/`: the requirements, design, tech, testing, and task-list documents this feature was built from.
+
+### Fixed
+- `run_continuously: false` was silently ignored -- the daemon always ran in continuous daemon mode regardless of the config setting. It now actually exits after a single pass, waiting for any queue spawned mid-pass (e.g. by a conflict duplicate) before exiting.
+- Small iCloud-only files (under `tiny_threshold`, 8 bytes by default) were permanently skipped rather than pulled, with no retry -- a genuinely small note could never sync down. Removed the byte-size heuristic in favor of the already-correct downstream `wait_for_icloud_readable` check.
+- `content_available` checked a coarse Windows-attribute-derived cloud state before checking actual bytes-on-disk, so a fully-downloaded file could be stuck reporting "not available" indefinitely (iCloud can leave the OFFLINE attribute set on unpinned files even after full download) -- reordered to trust the byte comparison first.
+- iCloud sync-status lookups spawned a new PowerShell + COM process on every ~0.5s poll tick, for every in-flight file -- replaced with a single persistent `Shell.Application` COM object on one dedicated background thread, cutting each lookup from a process launch to a plain COM call.
+- The final "Graceful shutdown complete" log line was buffered *after* the shutdown `flush()` call, so it never reached the on-disk log file. Reordered so `flush()` runs last.
+- `logger.py` prints Unicode status symbols unconditionally; a console-subsystem exe launched with `CREATE_NO_WINDOW` (as the tray app does) or with piped/redirected stdout could default to the legacy ANSI codepage, which can't encode them -- crashed the sync task mid-run the moment a real new file showed up. `main()` now forces UTF-8 on stdout/stderr at startup.
+
 ## [1.2.0] - 2026-07-05
 
 ### Summary

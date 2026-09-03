@@ -4,7 +4,47 @@ A highly optimized, asynchronous, three-way sync engine designed to solve the no
 
 ![terminal image](assets/image.png)
 
-## Installation & Setup
+## Quick Start: Windows Installer (Recommended)
+
+The easiest way to run this is the tray app + installer — no Python required on the target machine.
+
+1. Install iCloud for Windows [Link](https://support.apple.com/en-ca/103232)
+2. Build the installer (see [Building the Installer](#building-the-installer) below) or obtain `obsidian-sync-setup.exe`, then run it. It installs per-user, no admin rights needed.
+3. Launch **obsidian-sync** from the Start Menu. A tray icon appears; right-click it for Options, where you fill in your vault paths and settings instead of hand-editing YAML.
+4. Click **Start** (or leave "Auto-start sync on launch" checked, the default — it'll start on its own the next time the tray app runs).
+
+> **Note:** Antivirus software (Norton in particular) has been observed quarantining the unsigned frozen `.exe` files, both during a local build and after installation. If syncing doesn't start, check your antivirus's quarantine/history for `obsidian-sync.exe` or `obsidian-sync-tray.exe` and restore/allow it.
+
+### Tray Menu
+
+| Item | Behavior |
+|---|---|
+| **Start** | Launches the daemon in continuous mode. |
+| **Stop** | Gracefully stops the running daemon or one-shot pass. |
+| **Run Once** | A single sync pass that exits on its own — available when idle. |
+| **Options...** | Edit vault paths, sync/logging settings, and ignore patterns. |
+| **Start on Windows startup** | Launches the tray app itself at login. |
+| **Auto-start sync on launch** | Starts syncing automatically as soon as the tray app runs (default: on). |
+| **Exit** | Closes the tray icon only — a running daemon keeps running detached; relaunching the tray reattaches to it. |
+
+### Building the Installer
+
+Requires [Inno Setup](https://jrsoftware.org/isinfo.php) (`ISCC.exe` on `PATH`, or in its default install location) and a Python environment with this repo cloned:
+
+```powershell
+git clone git@github.com:gursimar/obsidian-icloud-windows-sync.git
+cd obsidian-icloud-windows-sync
+.\installer\build.ps1
+```
+
+This installs the package in editable mode with build extras, freezes both the daemon and tray app with PyInstaller, and compiles `dist-installer\obsidian-sync-setup.exe`.
+
+---
+
+## Console / Developer Setup
+
+For running the daemon directly from a terminal (no tray app), or for development:
+
 1. Install iCloud for Windows [Link](https://support.apple.com/en-ca/103232)
 2. Clone the repository using `git clone git@github.com:gursimar/obsidian-icloud-windows-sync.git`
 3. Install as a package:
@@ -30,6 +70,10 @@ A highly optimized, asynchronous, three-way sync engine designed to solve the no
    ```bash
    python -m obsidian_sync --config config.yaml
    ```
+   For a single sync pass instead of the continuous daemon, regardless of `run_continuously` in the config:
+   ```bash
+   obsidian-sync --config config.yaml --once
+   ```
 
 > If you have any trouble in setup, raise issue on git.
 > Run natively on Windows, not WSL — iCloud placeholders behave incorrectly under WSL.
@@ -37,26 +81,41 @@ A highly optimized, asynchronous, three-way sync engine designed to solve the no
 ## Project Structure
 
 ```
-obsidian_sync/
-├── __main__.py      # CLI entry point
-├── config.py        # YAML config loading & validation
-├── logger.py        # Structured logging (console + file)
-├── disk_io.py       # Atomic copy, delete, Windows API
-├── hasher.py        # SHA-256 hashing with mtime/size cache
-├── icloud_status.py # Windows file attributes for iCloud sync state
-├── duplicates.py    # Startup duplicate/conflict scanner
-├── sync_engine.py   # File watchers + per-file event queues
-└── sync_worker.py   # Three-way sync logic with atomic operations
+obsidian_sync/          # The console daemon
+├── __main__.py         # CLI entry point (--config, --once)
+├── config.py           # YAML config loading, validation & round-trip save
+├── logger.py           # Structured logging (console + file)
+├── disk_io.py          # Atomic copy, delete, Windows API
+├── hasher.py           # SHA-256 hashing with mtime/size cache
+├── icloud_status.py    # Windows file attributes + iCloud sync-status COM worker
+├── duplicates.py       # Startup duplicate/conflict scanner
+├── sync_engine.py      # File watchers, per-file event queues, stop-file protocol
+└── sync_worker.py      # Three-way sync logic with atomic operations
+
+obsidian_sync_tray/      # The tray app -- a thin wrapper around the daemon above
+├── __main__.py          # Entry point, single-instance mutex
+├── app.py                # pystray <-> tkinter wiring, menu actions
+├── process_manager.py    # Starts/stops the daemon subprocess, tracks its state
+├── options_window.py     # Config-editing form (tkinter)
+├── autostart.py          # HKCU Run-key autostart toggle
+├── tray_state.py         # Reattaches to an already-running daemon
+├── settings.py           # Tray's own preferences (config path, auto-start)
+└── icons.py, menu.py, logging_tray.py, paths.py
+
+installer/               # PyInstaller specs + Inno Setup script (see below)
+specs/tray-app/           # Requirements/design/tech/testing/tasks for the tray app
 ```
 
 ### Modes of Operation
 
-| Mode | Config | Behavior |
+| Mode | How | Behavior |
 |---|---|---|
-| **One-Shot** | `run_continuously: false` | Single full pass, then exits. Use with Task Scheduler. |
-| **Daemon** | `run_continuously: true` | Runs continuously, polling every `poll_interval` seconds. |
+| **One-Shot** | `run_continuously: false` in config, or `--once` flag | Single full pass, then exits. |
+| **Daemon** | `run_continuously: true` (default), or the tray app's Start | Runs continuously, polling every `poll_interval` seconds. |
 
-#### Autostart via Task Scheduler
+#### Autostart
+
+The tray app's own **"Start on Windows startup"** menu item (an HKCU Run-key toggle, no admin needed) is the recommended way to autostart now — see [Quick Start](#quick-start-windows-installer-recommended) above. For a console-only setup without the tray app, Task Scheduler still works:
 
 Create `run-sync.ps1`:
 ```powershell

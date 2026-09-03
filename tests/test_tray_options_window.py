@@ -1,5 +1,4 @@
 import os
-import tkinter as tk
 from unittest.mock import patch
 
 import pytest
@@ -7,17 +6,13 @@ import pytest
 from obsidian_sync_tray.options_window import OptionsWindow
 
 
-@pytest.fixture(scope="module")
-def root():
-    # Module-scoped: repeatedly creating and destroying tk.Tk() root windows
-    # within one process can corrupt Tcl's library-path resolution for later
-    # instances (a known tkinter quirk, not specific to this code). Each
-    # OptionsWindow under test is a Toplevel of this one shared root, and
-    # each test destroys its own Toplevel, not the root.
-    r = tk.Tk()
-    r.withdraw()
-    yield r
-    r.destroy()
+@pytest.fixture
+def root(tk_root):
+    # Alias onto the session-shared Tk root (conftest.py) -- see its
+    # docstring for why only one tk.Tk() may ever be created per session.
+    # Each OptionsWindow under test is a Toplevel of this one shared root,
+    # and each test destroys its own Toplevel, not the root.
+    return tk_root
 
 
 def _make_config_file(tmp_path):
