@@ -404,6 +404,58 @@ class TestIgnoresUntrackedGoneEvents:
 
         assert "brand_new.md" in engine.file_queues
 
+    @pytest.mark.asyncio
+    async def test_deleted_folder_sweeps_deletes_for_tracked_children_gone_from_disk(self, engine, cfg):
+        # Regression: Windows sometimes never fires a per-file delete event
+        # for the files that were inside a deleted folder -- confirmed by
+        # hand against a real vault (a folder holding a single already-
+        # synced note, removed via Explorer, produced only the ambiguous
+        # folder-path event and nothing for the note itself). Without the
+        # sweep, that note's deletion would never reach iCloud/history.
+        engine.loop = asyncio.get_running_loop()
+        tracked_rel = os.path.join("NewTestFolder", "NewTestNote.md")
+        engine.hasher.state[tracked_rel] = {"L": {"hash": "abc", "mtime": 1, "size": 1}}
+        engine.synchronizer.sync_wrapper = AsyncMock()
+        # Deliberately not written to disk -- it's gone, matching the
+        # folder having actually been deleted.
+
+        phantom_dir = os.path.join(cfg.local_vault, "NewTestFolder")
+        engine.enqueue_path_event("deleted", phantom_dir, cfg.local_vault)
+        await asyncio.sleep(0)  # let call_soon_threadsafe's callback run
+
+        assert tracked_rel in engine.file_queues
+
+    def test_deleted_folder_event_does_not_sweep_children_still_present(self, engine, cfg):
+        # A tracked child that's still on disk means this wasn't really a
+        # deletion (e.g. a rename misclassified the same way) -- it must be
+        # left alone, not swept as deleted.
+        tracked_rel = os.path.join("NewTestFolder", "Stays.md")
+        engine.hasher.state[tracked_rel] = {"L": {"hash": "abc", "mtime": 1, "size": 1}}
+        _write(os.path.join(cfg.local_vault, tracked_rel))
+
+        phantom_dir = os.path.join(cfg.local_vault, "NewTestFolder")
+        engine.enqueue_path_event("deleted", phantom_dir, cfg.local_vault)
+
+        assert engine.file_queues == {}
+        engine.log.info.assert_any_call(
+            "IGNORED",
+            "Ignoring deleted for NewTestFolder: never a tracked file (likely a directory)",
+            level="verbose",
+        )
+
+    @pytest.mark.asyncio
+    async def test_moved_from_folder_sweeps_deletes_for_tracked_children_gone_from_disk(self, engine, cfg):
+        engine.loop = asyncio.get_running_loop()
+        tracked_rel = os.path.join("OldFolder", "note.md")
+        engine.hasher.state[tracked_rel] = {"L": {"hash": "abc", "mtime": 1, "size": 1}}
+        engine.synchronizer.sync_wrapper = AsyncMock()
+
+        phantom_dir = os.path.join(cfg.local_vault, "OldFolder")
+        engine.enqueue_path_event("moved_from", phantom_dir, cfg.local_vault)
+        await asyncio.sleep(0)
+
+        assert tracked_rel in engine.file_queues
+
 
 class TestRunMode:
     @pytest.mark.asyncio
