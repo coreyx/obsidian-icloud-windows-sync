@@ -23,7 +23,7 @@
 - Run Once → completes on its own, tray returns to Idle, no daemon left running.
 - Toggle autostart on → reboot → tray launches automatically. Toggle off → reboot → it doesn't.
 - **Frozen-build-specific** (test the actual PyInstaller output, not `python -m`): frozen daemon's COM `Shell.Application` status worker still functions; frozen tray never triggers an accidental `obsidian_sync.logger` import/crash; a real file create/modify/delete under the frozen daemon fires a watchdog event.
-- Installer: fresh install → shortcuts exist → uninstall while daemon is running → process stopped first → files removed → registry Run key removed → AppData config/logs left in place unless "full removal" was opted into.
+- Installer: fresh install → shortcuts exist → uninstall while daemon is running → process stopped first → files removed → registry Run key removed → AppData config/logs left in place unless "full removal" was opted into. **Verified during implementation** (silent install/uninstall via `/VERYSILENT /SUPPRESSMSGBOXES`, including a live daemon process running from the installed path at uninstall time -- confirmed killed, app directory and registry entry both fully removed). Not yet verified: the interactive "full removal" (Yes) branch of the post-uninstall config/logs prompt -- exercised by code review only, since the prompt is (correctly) skipped under `WizardSilent()`.
 
 ## Regression
 - All pre-existing tests continue to pass unmodified (no changes to `sync_worker.py`, `disk_io.py`, `icloud_status.py`, `hasher.py`, `duplicates.py`, `logger.py`).

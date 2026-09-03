@@ -43,7 +43,7 @@
   - Frozen-build checklist: COM worker functions, no `obsidian_sync.logger` crash, watchdog events fire
   - _Requirements: 9.1_
 
-- [ ] 8. Packaging: Inno Setup installer/uninstaller
+- [x] 8. Packaging: Inno Setup installer/uninstaller
   - `installer/obsidian_sync.iss`: per-user install, Start Menu shortcut, "Start on Windows startup" install-time checkbox (writes the same registry key the tray manages), `[Code]` steps to stop running daemon/tray processes before install and uninstall, registry Run-key cleanup on uninstall, optional full-removal prompt for AppData config/logs/state
   - `installer/build.ps1`: editable install → PyInstaller (both specs) → ISCC, one orchestrated build
   - Installer checklist per `testing.md`

@@ -166,7 +166,7 @@ Transient; "a process the tray believes is currently running."
 - **PID reuse after reboot**: `tray_state.py` validates recorded PID *and* exe path via `QueryFullProcessImageName`, not liveness alone.
 - **Two tray instances**: named mutex at tray startup; a second instance no-ops and exits.
 - **Config-edit-while-running race**: Save always writes to disk immediately; a running process only picks up changes on its next launch. Options window shows an "applies on next start" notice while something is active. No live-reload (out of scope; `SyncConfig` has no live-reload path today).
-- **Unsigned installer/exe**: expect a SmartScreen "Unknown Publisher" prompt and possible AV heuristics on first run — documented, not solved (code signing is out of scope).
+- **Unsigned installer/exe**: expect a SmartScreen "Unknown Publisher" prompt and possible AV heuristics on first run — documented, not solved (code signing is out of scope). Confirmed a real, not hypothetical, occurrence during implementation: Norton quarantined both frozen exes more than once (once during the PyInstaller build itself, once after Inno Setup installed `obsidian-sync-tray.exe` to `%LOCALAPPDATA%\Programs\obsidian-sync\`) -- a build-directory AV exclusion did not cover the installed directory; each needed its own exclusion. Worth a line in the README's install instructions.
 - **Autostart working directory is unpredictable** (HKCU Run has no guaranteed cwd) → `paths.py` resolves and passes only absolute paths, always.
 
 ```mermaid
