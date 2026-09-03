@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from obsidian_sync_tray.options_window import OptionsWindow
+from obsidian_sync_tray.options_window import OptionsWindow, TOOLTIPS
 
 
 @pytest.fixture
@@ -141,3 +141,51 @@ class TestValidationAndSave:
         from obsidian_sync.config import SyncConfig
         reloaded = SyncConfig.from_yaml(config_path)
         assert reloaded.poll_interval == 9
+
+
+class TestTooltips:
+    def test_every_documented_field_gets_its_tooltip_text(self, root, tmp_path):
+        # Verifies the wiring, not tkinter's own hover mechanics (covered by
+        # test_tray_tooltip.py) -- every TOOLTIPS entry must actually reach
+        # a widget in the built form, with no field silently missing one.
+        with patch("obsidian_sync_tray.options_window.Tooltip") as MockTooltip:
+            window = OptionsWindow(root, config_path=_make_config_file(tmp_path))
+            try:
+                shown_texts = {call.args[1] for call in MockTooltip.call_args_list}
+            finally:
+                window.destroy()
+        assert shown_texts == set(TOOLTIPS.values())
+
+    def test_each_field_gets_a_tooltip_on_both_its_label_and_its_control(self, root, tmp_path):
+        with patch("obsidian_sync_tray.options_window.Tooltip") as MockTooltip:
+            window = OptionsWindow(root, config_path=_make_config_file(tmp_path))
+            try:
+                local_vault_calls = [c for c in MockTooltip.call_args_list if c.args[1] == TOOLTIPS["local_vault"]]
+            finally:
+                window.destroy()
+        # _add_path_field attaches the same tooltip to both the label and
+        # the Entry widget.
+        assert len(local_vault_calls) == 2
+
+
+class TestOpenConfigFile:
+    def test_button_opens_the_config_file_via_os_startfile(self, root, tmp_path):
+        config_path = _make_config_file(tmp_path)
+        window = OptionsWindow(root, config_path=config_path)
+        try:
+            with patch("obsidian_sync_tray.options_window.os.startfile") as startfile:
+                window._open_config_file()
+            startfile.assert_called_once_with(config_path)
+        finally:
+            window.destroy()
+
+    def test_startfile_failure_shows_an_error_instead_of_crashing(self, root, tmp_path):
+        config_path = _make_config_file(tmp_path)
+        window = OptionsWindow(root, config_path=config_path)
+        try:
+            with patch("obsidian_sync_tray.options_window.os.startfile", side_effect=OSError("no association")), \
+                 patch("obsidian_sync_tray.options_window.messagebox.showerror") as showerror:
+                window._open_config_file()  # must not raise
+            showerror.assert_called_once()
+        finally:
+            window.destroy()

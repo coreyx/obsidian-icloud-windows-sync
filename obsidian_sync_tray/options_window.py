@@ -10,12 +10,35 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 
 from obsidian_sync.config import SyncConfig
+from .tooltip import Tooltip
 
 PATH_FIELDS = ("local_vault", "icloud_vault", "history_dir", "logs_dir")
 INT_FIELDS = (
     "poll_interval", "stability_window", "stabilize_wait",
     "tiny_threshold", "max_concurrent_io", "max_display_length", "log_retention",
 )
+
+# One line of hover help per config field, keyed by the same `attr` name
+# used throughout _build_*_tab below.
+TOOLTIPS = {
+    "local_vault": "The Obsidian vault folder on this PC that you actually edit.",
+    "icloud_vault": "The mirrored copy of the vault inside iCloud Drive, used to sync with your other devices.",
+    "history_dir": "Stores the last-synced “known good” copy of each file. Used to tell a real edit from a one-sided change or a genuine conflict.",
+    "logs_dir": "Where sync log files and the daemon's runtime files (like the stop-request marker) are written.",
+    "check_icloud_status": "Confirm iCloud has actually finished uploading a file before considering it synced. Turning this off is faster but can't tell a real upload delay from Explorer being slow to report it.",
+    "poll_interval": "How often (in seconds) the daemon re-checks the vaults, on top of reacting to file-system events as they happen.",
+    "stability_window": "How long to wait after a create or change is detected before acting on it, so a mid-save or rename in progress isn't treated as the final state.",
+    "stabilize_wait": "How much longer to wait when both sides changed at once (a real conflict), to make sure neither side is still being actively edited before picking a winner.",
+    "tiny_threshold": "Minimum file size, in bytes, before a brand-new file is pushed. Keeps empty placeholder notes (like a just-created, still-untitled note) from being synced immediately.",
+    "max_concurrent_io": "Maximum number of files the daemon will copy or hash at the same time.",
+    "console_level": "How much detail is written to the console and log file: quiet, normal, or verbose.",
+    "shorter_paths": "Shorten long file paths in log output for readability.",
+    "max_display_length": "Maximum path length, in characters, before it's shortened in log output.",
+    "log_retention": "How many past log files to keep before older ones are deleted automatically.",
+    "ignore_patterns": "Glob-style filename patterns to exclude from sync, one per line (e.g. *.tmp).",
+    "ignored_dirs": "Directory names to exclude from sync entirely, one per line (e.g. .trash).",
+    "ignored_files": "Exact filenames to exclude from sync, one per line (e.g. .DS_Store).",
+}
 
 
 class OptionsWindow(tk.Toplevel):
@@ -68,21 +91,41 @@ class OptionsWindow(tk.Toplevel):
             ).pack(pady=(0, 4))
 
         button_row = tk.Frame(self)
-        button_row.pack(pady=(0, 8))
-        tk.Button(button_row, text="Save", command=self._on_save, width=10).pack(side="left", padx=4)
-        tk.Button(button_row, text="Cancel", command=self.destroy, width=10).pack(side="left", padx=4)
+        button_row.pack(fill="x", padx=8, pady=(0, 8))
+        tk.Button(button_row, text="Open Config File", command=self._open_config_file).pack(side="left")
+        tk.Button(button_row, text="Cancel", command=self.destroy, width=10).pack(side="right", padx=(4, 0))
+        tk.Button(button_row, text="Save", command=self._on_save, width=10).pack(side="right")
+
+    def _add_tooltip(self, *widgets, attr):
+        text = TOOLTIPS.get(attr)
+        if not text:
+            return
+        for widget in widgets:
+            Tooltip(widget, text)
 
     def _add_path_field(self, parent, row, label, attr):
-        tk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=4, pady=4)
+        label_widget = tk.Label(parent, text=label)
+        label_widget.grid(row=row, column=0, sticky="w", padx=4, pady=4)
         var = tk.StringVar(value=getattr(self.config, attr))
         self._vars[attr] = var
-        tk.Entry(parent, textvariable=var, width=45).grid(row=row, column=1, padx=4, pady=4)
+        entry = tk.Entry(parent, textvariable=var, width=45)
+        entry.grid(row=row, column=1, padx=4, pady=4)
         tk.Button(parent, text="Browse...", command=lambda: self._browse(var)).grid(row=row, column=2, padx=4, pady=4)
+        self._add_tooltip(label_widget, entry, attr=attr)
 
     def _browse(self, var: tk.StringVar):
         chosen = filedialog.askdirectory(initialdir=var.get() or None, parent=self)
         if chosen:
             var.set(chosen)
+
+    def _open_config_file(self):
+        # os.startfile hands off to whatever program Windows has associated
+        # with .yaml files (Notepad if nothing else claims it) -- same as
+        # double-clicking the file in Explorer.
+        try:
+            os.startfile(self.config_path)
+        except OSError as e:
+            messagebox.showerror("Couldn't open config file", f"{self.config_path}\n\n{e}", parent=self)
 
     def _build_paths_tab(self, notebook):
         frame = tk.Frame(notebook)
@@ -95,15 +138,18 @@ class OptionsWindow(tk.Toplevel):
     def _add_bool_field(self, parent, row, label, attr):
         var = tk.BooleanVar(value=getattr(self.config, attr))
         self._vars[attr] = var
-        tk.Checkbutton(parent, text=label, variable=var).grid(
-            row=row, column=0, columnspan=2, sticky="w", padx=4, pady=4
-        )
+        check = tk.Checkbutton(parent, text=label, variable=var)
+        check.grid(row=row, column=0, columnspan=2, sticky="w", padx=4, pady=4)
+        self._add_tooltip(check, attr=attr)
 
     def _add_int_field(self, parent, row, label, attr):
-        tk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=4, pady=4)
+        label_widget = tk.Label(parent, text=label)
+        label_widget.grid(row=row, column=0, sticky="w", padx=4, pady=4)
         var = tk.StringVar(value=str(getattr(self.config, attr)))
         self._vars[attr] = var
-        tk.Entry(parent, textvariable=var, width=10).grid(row=row, column=1, sticky="w", padx=4, pady=4)
+        entry = tk.Entry(parent, textvariable=var, width=10)
+        entry.grid(row=row, column=1, sticky="w", padx=4, pady=4)
+        self._add_tooltip(label_widget, entry, attr=attr)
 
     def _build_sync_tab(self, notebook):
         # run_continuously is deliberately absent (Requirement 7.3) --
@@ -120,23 +166,28 @@ class OptionsWindow(tk.Toplevel):
     def _build_logging_tab(self, notebook):
         frame = tk.Frame(notebook)
         notebook.add(frame, text="Logging")
-        tk.Label(frame, text="Console level:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        level_label = tk.Label(frame, text="Console level:")
+        level_label.grid(row=0, column=0, sticky="w", padx=4, pady=4)
         level_var = tk.StringVar(value=self.config.console_level)
         self._vars["console_level"] = level_var
-        ttk.Combobox(
+        level_combo = ttk.Combobox(
             frame, textvariable=level_var, values=["quiet", "normal", "verbose"],
             state="readonly", width=12,
-        ).grid(row=0, column=1, sticky="w", padx=4, pady=4)
+        )
+        level_combo.grid(row=0, column=1, sticky="w", padx=4, pady=4)
+        self._add_tooltip(level_label, level_combo, attr="console_level")
         self._add_bool_field(frame, 1, "Shorten displayed paths", "shorter_paths")
         self._add_int_field(frame, 2, "Max display length:", "max_display_length")
         self._add_int_field(frame, 3, "Log retention (files):", "log_retention")
 
     def _add_list_field(self, parent, row, label, attr, values):
-        tk.Label(parent, text=label).grid(row=row, column=0, sticky="nw", padx=4, pady=4)
+        label_widget = tk.Label(parent, text=label)
+        label_widget.grid(row=row, column=0, sticky="nw", padx=4, pady=4)
         text = tk.Text(parent, width=45, height=5)
         text.insert("1.0", "\n".join(values))
         text.grid(row=row, column=1, padx=4, pady=4)
         self._vars[attr] = text
+        self._add_tooltip(label_widget, text, attr=attr)
 
     def _build_ignore_tab(self, notebook):
         frame = tk.Frame(notebook)

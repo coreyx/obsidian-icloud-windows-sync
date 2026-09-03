@@ -16,6 +16,7 @@
 - First-run setup: a missing config file is created automatically (with `history_dir`/`logs_dir` pre-filled) instead of failing, and Start/Run Once/auto-start-on-launch open the Options window instead of attempting to launch when vault paths are still blank.
 - `installer/`: PyInstaller specs for both the daemon and tray app (onedir builds), an Inno Setup script producing a per-user installer/uninstaller, and a `build.ps1` orchestrating the whole pipeline.
 - `specs/tray-app/`: the requirements, design, tech, testing, and task-list documents this feature was built from.
+- Options window: hover tooltips on every field explaining what it does, and an "Open Config File" button that hands the config YAML off to whatever program Windows has associated with `.yaml` files.
 
 ### Fixed
 - `run_continuously: false` was silently ignored -- the daemon always ran in continuous daemon mode regardless of the config setting. It now actually exits after a single pass, waiting for any queue spawned mid-pass (e.g. by a conflict duplicate) before exiting.
