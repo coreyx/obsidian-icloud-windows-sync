@@ -12,6 +12,8 @@
 - Cooperative stop-file protocol: the daemon polls for `<logs_dir>/stop.request` and shuts down gracefully (state saved, logs flushed) when it appears, independent of the caller's PID -- the mechanism the tray app's Stop action uses.
 - `SyncConfig.to_dict()` / `SyncConfig.save()`: round-trips a config back to the same YAML shape `from_yaml` reads, used by the Options window.
 - `obsidian_sync_tray` package: tray icon/menu (pystray), Options window (tkinter), autostart via the HKCU Run registry key, cross-session reattachment to an already-running daemon, and a small file-based logger that avoids `obsidian_sync.logger`'s console-only assumptions.
+- Tray menu: "View Live Log" (a window that tails the daemon's current sync log), "Open Sync Logs Folder", and "Open Tray Log" -- no more hunting for log files manually.
+- First-run setup: a missing config file is created automatically (with `history_dir`/`logs_dir` pre-filled) instead of failing, and Start/Run Once/auto-start-on-launch open the Options window instead of attempting to launch when vault paths are still blank.
 - `installer/`: PyInstaller specs for both the daemon and tray app (onedir builds), an Inno Setup script producing a per-user installer/uninstaller, and a `build.ps1` orchestrating the whole pipeline.
 - `specs/tray-app/`: the requirements, design, tech, testing, and task-list documents this feature was built from.
 
@@ -22,6 +24,9 @@
 - iCloud sync-status lookups spawned a new PowerShell + COM process on every ~0.5s poll tick, for every in-flight file -- replaced with a single persistent `Shell.Application` COM object on one dedicated background thread, cutting each lookup from a process launch to a plain COM call.
 - The final "Graceful shutdown complete" log line was buffered *after* the shutdown `flush()` call, so it never reached the on-disk log file. Reordered so `flush()` runs last.
 - `logger.py` prints Unicode status symbols unconditionally; a console-subsystem exe launched with `CREATE_NO_WINDOW` (as the tray app does) or with piped/redirected stdout could default to the legacy ANSI codepage, which can't encode them -- crashed the sync task mid-run the moment a real new file showed up. `main()` now forces UTF-8 on stdout/stderr at startup.
+- Stop permanently poisoned every subsequent Start: neither the daemon nor Stop ever deletes `stop.request` on a graceful exit, so a leftover file from any earlier run instantly killed the next daemon the moment it started. The tray now clears any stale stop file before launching.
+- Options (and the log viewer) opened but were never actually visible: `OptionsWindow` was transient-for the tray's permanently-hidden root, which on Windows leaves a `Toplevel` stuck "withdrawn" even after an explicit `deiconify()`. Removed the `transient()` call; it only makes sense against a real visible parent.
+- The Inno Setup uninstaller crashed with a runtime error dialog on every interactive uninstall (`WizardSilent()` is a Setup-only function; `UninstallSilent()` is the correct uninstall-context one).
 
 ## [1.2.0] - 2026-07-05
 

@@ -54,5 +54,14 @@ class TestMenuActions:
         _item(menu, "Options...")(None)
         app.on_options.assert_called_once()
 
+        _item(menu, "View Live Log")(None)
+        app.on_view_live_log.assert_called_once()
+
+        _item(menu, "Open Sync Logs Folder")(None)
+        app.on_open_sync_logs.assert_called_once()
+
+        _item(menu, "Open Tray Log")(None)
+        app.on_open_tray_log.assert_called_once()
+
         _item(menu, "Exit")(None)
         app.on_exit.assert_called_once()

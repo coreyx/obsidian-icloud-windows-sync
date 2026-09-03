@@ -121,7 +121,10 @@ begin
     // custom MsgBox calls -- a fully silent/scripted uninstall would
     // otherwise hang here waiting for input. Skip the prompt and default
     // to the safe choice (leave the data in place) when running silently.
-    if not WizardSilent() then
+    // NOTE: WizardSilent() is a *Setup*-only function and errors if called
+    // from an uninstaller -- UninstallSilent() is the uninstall-context
+    // equivalent.
+    if not UninstallSilent() then
     begin
       DaemonDataDir := ExpandConstant('{userappdata}\obsidian-sync');
       TrayDataDir := ExpandConstant('{userappdata}\obsidian-sync-tray');

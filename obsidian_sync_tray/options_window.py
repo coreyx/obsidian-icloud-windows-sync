@@ -34,7 +34,12 @@ class OptionsWindow(tk.Toplevel):
         self._vars = {}
         self._build_ui()
 
-        self.transient(master)
+        # Deliberately no self.transient(master): `master` is the tray
+        # app's permanently-hidden root, and transient()-against-a-withdrawn
+        # master leaves this window stuck "withdrawn" too, invisible at the
+        # OS level, even after an explicit deiconify() -- confirmed by hand.
+        # transient() only makes sense when the master is a real visible
+        # window, which ours never is.
         self.grab_set()
         self.focus_set()
 

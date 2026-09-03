@@ -22,7 +22,10 @@ The easiest way to run this is the tray app + installer — no Python required o
 | **Start** | Launches the daemon in continuous mode. |
 | **Stop** | Gracefully stops the running daemon or one-shot pass. |
 | **Run Once** | A single sync pass that exits on its own — available when idle. |
-| **Options...** | Edit vault paths, sync/logging settings, and ignore patterns. |
+| **Options...** | Edit vault paths, sync/logging settings, and ignore patterns. If your vault paths aren't set yet, this opens automatically instead of Start/Run Once failing. |
+| **View Live Log** | A window that tails the daemon's current sync log in real time. |
+| **Open Sync Logs Folder** | Opens the daemon's log directory in File Explorer. |
+| **Open Tray Log** | Opens the tray app's own log file — useful if Start/Run Once fails before the daemon even launches. |
 | **Start on Windows startup** | Launches the tray app itself at login. |
 | **Auto-start sync on launch** | Starts syncing automatically as soon as the tray app runs (default: on). |
 | **Exit** | Closes the tray icon only — a running daemon keeps running detached; relaunching the tray reattaches to it. |

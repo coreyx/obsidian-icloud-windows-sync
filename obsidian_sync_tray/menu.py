@@ -20,6 +20,9 @@ def build_menu(app) -> pystray.Menu:
         pystray.MenuItem("Run Once", app.on_run_once, enabled=lambda item: app.is_idle()),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Options...", app.on_options),
+        pystray.MenuItem("View Live Log", app.on_view_live_log),
+        pystray.MenuItem("Open Sync Logs Folder", app.on_open_sync_logs),
+        pystray.MenuItem("Open Tray Log", app.on_open_tray_log),
         pystray.MenuItem(
             "Start on Windows startup",
             app.on_toggle_start_on_startup,

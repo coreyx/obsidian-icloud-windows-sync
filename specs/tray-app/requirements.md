@@ -121,3 +121,23 @@ This document outlines the requirements for the Obsidian Sync Tray App, which pr
 1. THE tray app SHALL NOT modify the existing sync engine's core logic (`sync_worker.py`, `disk_io.py`, `icloud_status.py`, `hasher.py`).
 2. WHEN this feature is complete THEN all pre-existing automated tests SHALL continue to pass unmodified.
 3. IF a user never installs or runs the tray app THEN the existing hand-written `config.yaml` + console-daemon workflow SHALL continue to work exactly as before.
+
+### Requirement 12: First-Run Setup
+
+**User Story:** As a user on a fresh install, I want the app to guide me to fill in my vault paths instead of just failing, so I don't have to know the config file exists or where it lives.
+
+#### Acceptance Criteria
+
+1. WHEN the tray app starts and no config file exists at the configured path THEN the system SHALL create a default config file rather than failing.
+2. WHEN a default config is created THEN the system SHALL pre-fill `history_dir`/`logs_dir` with usable defaults inside the daemon's own data folder, creating those directories on disk, and SHALL leave `local_vault`/`icloud_vault` blank.
+3. IF `local_vault` or `icloud_vault` is blank WHEN the user selects Start or Run Once (including the automatic start-on-launch) THEN the system SHALL open the Options window instead of attempting to launch the daemon.
+
+### Requirement 13: Log Access
+
+**User Story:** As a user, I want an easy way to see what the daemon is actually doing, so I don't have to know where log files live on disk.
+
+#### Acceptance Criteria
+
+1. THE tray menu SHALL provide a "View Live Log" item that opens a window showing the daemon's current sync log, updating as new lines are written.
+2. THE tray menu SHALL provide an item that opens the daemon's sync-logs folder in the default file browser.
+3. THE tray menu SHALL provide an item that opens the tray app's own log file, for diagnosing tray-level issues (e.g. a failed launch) independent of whether the daemon ever started.

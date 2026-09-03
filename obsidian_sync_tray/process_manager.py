@@ -23,6 +23,7 @@ from .logging_tray import TrayLogger
 DAEMON_EXE_NAME = "obsidian-sync.exe"
 STOP_POLL_SECONDS = 0.5
 STOP_TIMEOUT_SECONDS = 15.0
+STOP_FILE_NAME = "stop.request"
 
 
 class State(Enum):
@@ -43,7 +44,42 @@ class ProcessManager:
         self._pid: Optional[int] = None
         self._logs_dir: Optional[str] = None
         self.state = State.IDLE
+        self.ensure_config_exists()
         self._reattach()
+
+    # -- first-run config --
+
+    def ensure_config_exists(self) -> None:
+        """
+        Writes a default config file if none exists yet, so a fresh install
+        never hard-fails with FileNotFoundError. history_dir/logs_dir get
+        sensible defaults inside the daemon's own data folder (created on
+        disk immediately); local_vault/icloud_vault are left blank since
+        those can't be guessed -- see needs_setup().
+        """
+        if os.path.exists(self.config_path):
+            return
+        try:
+            config_dir = os.path.dirname(self.config_path)
+            os.makedirs(config_dir, exist_ok=True)
+            cfg = SyncConfig()
+            cfg.history_dir = os.path.join(config_dir, "History")
+            cfg.logs_dir = os.path.join(config_dir, "Logs")
+            os.makedirs(cfg.history_dir, exist_ok=True)
+            os.makedirs(cfg.logs_dir, exist_ok=True)
+            cfg.save(self.config_path)
+            self.log.info(f"Created default config at {self.config_path}")
+        except OSError as e:
+            self.log.error(f"Failed to create default config at {self.config_path}", e)
+
+    def needs_setup(self) -> bool:
+        """True if the config is missing local_vault/icloud_vault -- e.g.
+        right after a fresh install, before the user has used Options."""
+        try:
+            cfg = SyncConfig.from_yaml(self.config_path)
+        except Exception:
+            return True
+        return not cfg.local_vault.strip() or not cfg.icloud_vault.strip()
 
     # -- daemon exe discovery --
 
@@ -109,6 +145,13 @@ class ProcessManager:
             self.log.error("Failed to load config before launch", e)
             raise DaemonLaunchError(f"Could not load config: {e}") from e
 
+        # A stop.request file from a *previous* run is never deleted by the
+        # daemon itself (it's exiting when it sees one) or by Stop -- if we
+        # don't remove it here, a stale one instantly kills every future
+        # launch against this logs_dir the moment it starts. Confirmed by
+        # hand: this made every Stop permanently poison the next Start.
+        self._clear_stale_stop_file(config.logs_dir)
+
         args = self._launch_args(once)
         try:
             proc = subprocess.Popen(
@@ -142,7 +185,7 @@ class ProcessManager:
         # Not PID-scoped -- see SyncEngine.stop_file_path's docstring for why
         # (an installed launcher can spawn the interpreter as a child
         # process with a different PID than Popen reports for it).
-        stop_file = os.path.join(self._logs_dir, "stop.request")
+        stop_file = os.path.join(self._logs_dir, STOP_FILE_NAME)
         try:
             with open(stop_file, "w"):
                 pass
@@ -169,6 +212,16 @@ class ProcessManager:
             self._reset_to_idle()
 
     # -- internals --
+
+    def _clear_stale_stop_file(self, logs_dir: str) -> None:
+        stop_file = os.path.join(logs_dir, STOP_FILE_NAME)
+        try:
+            os.remove(stop_file)
+            self.log.info(f"Removed stale stop file from a previous run: {stop_file}")
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            self.log.warn(f"Could not remove stale stop file {stop_file}: {e}")
 
     def _wait_for_exit(self, pid: int, timeout_seconds: float) -> bool:
         deadline = time.monotonic() + timeout_seconds

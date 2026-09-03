@@ -54,3 +54,12 @@
   - CHANGELOG.md: new version entry matching the project's existing Keep-a-Changelog-style format
   - Release Notes artifact
   - _Requirements: (documentation of all above)_
+
+- [x] 10. Post-release fixes from real installed-app usage
+  - Stale `stop.request` permanently blocking every Start after the first Stop (`process_manager.py`)
+  - Options/log-viewer windows opening invisible due to `transient()` against a withdrawn root (`options_window.py`, `app.py`)
+  - Fresh-install hard-failure instead of first-run setup prompting (`process_manager.py`: `ensure_config_exists()`, `needs_setup()`)
+  - "View Live Log", "Open Sync Logs Folder", "Open Tray Log" menu items (`log_viewer.py`, `menu.py`, `app.py`)
+  - Inno Setup uninstaller crash (`WizardSilent()` → `UninstallSilent()`)
+  - Test-isolation leaks into the real `%APPDATA%` tray log and a literal `C:\fake\` directory
+  - _Requirements: 2.5, 2.6, 12, 13_

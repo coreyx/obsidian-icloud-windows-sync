@@ -29,7 +29,15 @@ def fake_config(tmp_path):
 
 
 def _manager(config_path="C:/fake/config.yaml"):
-    return pm.ProcessManager(config_path=config_path)
+    # ensure_config_exists() does real disk I/O against config_path -- most
+    # tests here use a placeholder path and mock SyncConfig.from_yaml
+    # directly for the launch flow, so skip it here; TestFirstRunConfig
+    # below exercises it for real against a tmp_path. Also pass an explicit
+    # logger: the default TrayLogger() writes to the real, shared
+    # %APPDATA%\obsidian-sync-tray\tray.log, which every test here would
+    # otherwise pollute.
+    with patch.object(pm.ProcessManager, "ensure_config_exists"):
+        return pm.ProcessManager(config_path=config_path, logger=MagicMock())
 
 
 class TestStateTransitions:
@@ -50,6 +58,26 @@ class TestStateTransitions:
         assert state.pid == 4242
         assert state.mode == "daemon"
         assert state.logs_dir == fake_config.logs_dir
+
+    def test_start_removes_a_stale_stop_file_from_a_previous_run(self, isolated_state_path, fake_config):
+        # Regression test: neither the daemon nor Stop ever deletes
+        # stop.request on a graceful exit (by design -- the daemon is
+        # exiting when it sees one). Without this cleanup, a leftover file
+        # from any earlier run instantly kills every future Start against
+        # the same logs_dir the moment the new process starts.
+        stale_stop_file = os.path.join(fake_config.logs_dir, "stop.request")
+        with open(stale_stop_file, "w"):
+            pass
+        assert os.path.exists(stale_stop_file)
+
+        fake_proc = MagicMock(pid=4242)
+        with patch("obsidian_sync_tray.process_manager.SyncConfig.from_yaml", return_value=fake_config), \
+             patch("obsidian_sync_tray.process_manager.subprocess.Popen", return_value=fake_proc):
+            manager = _manager()
+            manager.start()
+
+        assert manager.state == pm.State.RUNNING_DAEMON
+        assert not os.path.exists(stale_stop_file)
 
     def test_run_once_transitions_to_running_once_with_once_flag(self, isolated_state_path, fake_config):
         fake_proc = MagicMock(pid=99)
@@ -177,6 +205,50 @@ class TestStateTransitions:
             with pytest.raises(pm.DaemonLaunchError):
                 manager.start()
         assert manager.state == pm.State.IDLE
+
+
+class TestFirstRunConfig:
+    def test_creates_default_config_when_none_exists(self, isolated_state_path, tmp_path):
+        config_path = str(tmp_path / "config.yaml")
+        assert not os.path.exists(config_path)
+
+        pm.ProcessManager(config_path=config_path, logger=MagicMock())
+
+        assert os.path.exists(config_path)
+        reloaded = SyncConfig.from_yaml(config_path)
+        assert reloaded.local_vault == ""
+        assert reloaded.icloud_vault == ""
+        assert os.path.isdir(reloaded.history_dir)
+        assert os.path.isdir(reloaded.logs_dir)
+
+    def test_does_not_overwrite_an_existing_config(self, isolated_state_path, tmp_path):
+        config_path = str(tmp_path / "config.yaml")
+        cfg = SyncConfig()
+        cfg.local_vault = str(tmp_path / "local")
+        cfg.save(config_path)
+
+        pm.ProcessManager(config_path=config_path, logger=MagicMock())
+
+        assert SyncConfig.from_yaml(config_path).local_vault == str(tmp_path / "local")
+
+    def test_needs_setup_true_when_vault_paths_blank(self, isolated_state_path, tmp_path):
+        config_path = str(tmp_path / "config.yaml")
+        manager = pm.ProcessManager(config_path=config_path, logger=MagicMock())  # creates the blank default
+        assert manager.needs_setup() is True
+
+    def test_needs_setup_false_when_vault_paths_set(self, isolated_state_path, tmp_path):
+        config_path = str(tmp_path / "config.yaml")
+        cfg = SyncConfig()
+        cfg.local_vault = str(tmp_path / "local")
+        cfg.icloud_vault = str(tmp_path / "icloud")
+        cfg.save(config_path)
+
+        manager = pm.ProcessManager(config_path=config_path, logger=MagicMock())
+        assert manager.needs_setup() is False
+
+    def test_needs_setup_true_when_config_unreadable(self, isolated_state_path):
+        manager = _manager(config_path="C:/definitely/does/not/exist/config.yaml")
+        assert manager.needs_setup() is True
 
 
 class TestReattach:
