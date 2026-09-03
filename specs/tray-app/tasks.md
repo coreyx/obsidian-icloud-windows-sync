@@ -23,7 +23,7 @@
   - Unit test: save → from_yaml reproduces equivalent values for every field
   - _Requirements: 7.3, 8.1_
 
-- [ ] 5. Build tray core: paths, state, autostart, process manager, logging
+- [x] 5. Build tray core: paths, state, autostart, process manager, logging
   - New package `obsidian_sync_tray/`: `paths.py`, `tray_state.py`, `autostart.py`, `process_manager.py`, `logging_tray.py`
   - `logging_tray.py` must never import `obsidian_sync.logger` (colorama/`print()` on `sys.stdout is None` crash risk in a windowed exe)
   - `process_manager.py`: daemon-exe discovery (installed path → PATH → dev fallback), Start/Stop/Run Once, stop-file write + poll + kill fallback
