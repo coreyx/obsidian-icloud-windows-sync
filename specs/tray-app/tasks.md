@@ -65,4 +65,14 @@
   - Live Log window unclosable while Options was also open (`OptionsWindow.grab_set()` redirecting all pointer events application-wide, per documented Tcl/Tk `grab` semantics)
   - Live Log window showed plain uncolored text and was missing the startup banner and duplicate-scan lines (`obsidian_sync/__main__.py`, `logger.py`, `obsidian_sync_tray/log_viewer.py`)
   - Daemon hung indefinitely at startup whenever a conflict/duplicate file was found, since `CREATE_NO_WINDOW` still gives it a real (if hidden, unusable) console for `duplicates.py`'s `input()` prompt to block on (`obsidian_sync_tray/process_manager.py`: `stdin=subprocess.DEVNULL`; `obsidian_sync/duplicates.py`: skip the prompt when there's no real console)
+  - A daemon that crashes before its own log file's first flush left zero trace anywhere; `_launch()` now captures stdout/stderr unconditionally to `daemon_startup.log` (`obsidian_sync_tray/process_manager.py`)
   - _Requirements: 2.5, 2.6, 12, 13_
+
+- [ ] 11. Bounded log growth (Requirement 14)
+  - `obsidian_sync/config.py`: new `max_log_size_mb` field (`logging:` section, default 10), following `log_retention`'s existing pattern through `from_yaml`/`to_dict`
+  - `obsidian_sync/logger.py`: `flush()` checks cumulative bytes written against `max_log_size_mb` and starts a new `sync_<timestamp>.log` (same naming `init_log_file()` already uses) once past it, so rotation is indistinguishable from a fresh process's log file to every existing consumer
+  - `obsidian_sync/sync_engine.py`: call `cleanup_old_logs()` from the existing ~5s checkpoint (not just once at startup), throttled to only re-sweep right after a rotation actually happens
+  - `obsidian_sync_tray/log_viewer.py`: on open/file-switch, seek near the end of the file (`TAIL_BYTES`, ~256KB) instead of loading from byte 0; cap the Text widget at `MAX_LINES` (~5000), evicting the oldest displayed lines as new ones arrive
+  - `obsidian_sync_tray/options_window.py`: add the `max_log_size_mb` field + tooltip to the Logging tab, matching `log_retention`
+  - Unit tests: rotation triggers at the configured threshold and produces a discoverable/prunable file; periodic `cleanup_old_logs()` call fires after rotation; Live Log's tail-on-open bounds the initial load on a large file; Live Log's scrollback cap evicts oldest lines while continuing to tail correctly
+  - _Requirements: 14.1, 14.2, 14.3, 14.4_

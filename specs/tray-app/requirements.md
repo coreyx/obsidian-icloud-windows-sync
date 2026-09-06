@@ -141,3 +141,14 @@ This document outlines the requirements for the Obsidian Sync Tray App, which pr
 1. THE tray menu SHALL provide a "View Live Log" item that opens a window showing the daemon's current sync log, updating as new lines are written.
 2. THE tray menu SHALL provide an item that opens the daemon's sync-logs folder in the default file browser.
 3. THE tray menu SHALL provide an item that opens the tray app's own log file, for diagnosing tray-level issues (e.g. a failed launch) independent of whether the daemon ever started.
+
+### Requirement 14: Bounded Log Growth
+
+**User Story:** As a user running the daemon continuously for long stretches, I want log files and the Live Log window to stay a reasonable size on their own, so a long-running sync doesn't quietly consume unbounded disk space or memory.
+
+#### Acceptance Criteria
+
+1. WHILE the daemon is running continuously, WHEN its current log file's size reaches `max_log_size_mb` THEN the system SHALL begin writing to a new log file rather than letting the current one grow further.
+2. WHEN a new log file is started, by either rotation or a fresh process launch, THEN the system SHALL apply the existing file-count-based retention (`log_retention`) to prune the oldest log files, not only when the daemon next starts up.
+3. WHEN the Live Log window opens or switches to a different (e.g. newly rotated) log file THEN the system SHALL load only the most recent portion of that file rather than its entire contents from the start.
+4. WHILE the Live Log window remains open and tailing an active log file THEN the system SHALL cap the amount of text retained in the window, discarding the oldest displayed lines once that cap is exceeded, so the window's memory use does not grow unbounded over an arbitrarily long session.
