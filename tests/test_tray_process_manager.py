@@ -108,6 +108,24 @@ class TestStateTransitions:
 
         assert popen.call_args.kwargs["stdin"] == pm.subprocess.DEVNULL
 
+    def test_start_captures_stdout_and_stderr_to_a_startup_log(self, isolated_state_path, fake_config):
+        # The daemon's own log file only exists after its first flush() --
+        # a crash before that (e.g. bad args, config validation) would
+        # otherwise vanish into its hidden CREATE_NO_WINDOW console with no
+        # trace anywhere. _launch() now captures stdout/stderr to a fixed
+        # file in logs_dir regardless, so a startup failure is visible.
+        fake_proc = MagicMock(pid=4242)
+        with patch("obsidian_sync_tray.process_manager.SyncConfig.from_yaml", return_value=fake_config), \
+             patch("obsidian_sync_tray.process_manager.subprocess.Popen", return_value=fake_proc) as popen:
+            manager = _manager()
+            manager.start()
+
+        capture_path = os.path.join(fake_config.logs_dir, "daemon_startup.log")
+        assert os.path.exists(capture_path)
+        kwargs = popen.call_args.kwargs
+        assert kwargs["stdout"].name == capture_path
+        assert kwargs["stderr"] == pm.subprocess.STDOUT
+
     def test_start_is_noop_while_already_running(self, isolated_state_path, fake_config):
         fake_proc = MagicMock(pid=1)
         with patch("obsidian_sync_tray.process_manager.SyncConfig.from_yaml", return_value=fake_config), \

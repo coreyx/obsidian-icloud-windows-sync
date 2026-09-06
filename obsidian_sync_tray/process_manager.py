@@ -153,6 +153,16 @@ class ProcessManager:
         self._clear_stale_stop_file(config.logs_dir)
 
         args = self._launch_args(once)
+        # The daemon's own log file is only ever created on its first
+        # flush() -- if it crashes with an unhandled exception before that
+        # (e.g. during argument parsing or config validation), the
+        # traceback goes to its hidden CREATE_NO_WINDOW console and is lost
+        # forever, with zero trace anywhere on disk. Capture stdout/stderr
+        # unconditionally (overwritten each launch -- this is "what did the
+        # most recent start attempt print", not a growing log) so a startup
+        # crash is actually visible instead of just "it never started" with
+        # no explanation.
+        startup_capture = open(os.path.join(config.logs_dir, "daemon_startup.log"), "wb")
         try:
             proc = subprocess.Popen(
                 args,
@@ -171,10 +181,14 @@ class ProcessManager:
                 # of it hit EOF immediately instead, no matter what code
                 # eventually tries to read from it.
                 stdin=subprocess.DEVNULL,
+                stdout=startup_capture,
+                stderr=subprocess.STDOUT,
             )
         except OSError as e:
             self.log.error(f"Failed to launch daemon ({'once' if once else 'daemon'})", e)
             raise DaemonLaunchError(str(e)) from e
+        finally:
+            startup_capture.close()
 
         self._proc = proc
         self._pid = proc.pid

@@ -17,6 +17,7 @@
 - `installer/`: PyInstaller specs for both the daemon and tray app (onedir builds), an Inno Setup script producing a per-user installer/uninstaller, and a `build.ps1` orchestrating the whole pipeline.
 - `specs/tray-app/`: the requirements, design, tech, testing, and task-list documents this feature was built from.
 - Options window: hover tooltips on every field explaining what it does, and an "Open Config File" button that hands the config YAML off to whatever program Windows has associated with `.yaml` files.
+- `<logs_dir>\daemon_startup.log`: every tray-launched daemon now has its stdout/stderr captured here (overwritten each launch). The daemon's own log file only exists after its first buffered flush, so a crash before that point (bad arguments, config validation, anything unhandled) previously vanished into its hidden `CREATE_NO_WINDOW` console with zero trace anywhere -- it would just silently never start, with no way to tell why. Open it from the tray's "Open Sync Logs Folder" item.
 
 ### Fixed
 - `run_continuously: false` was silently ignored -- the daemon always ran in continuous daemon mode regardless of the config setting. It now actually exits after a single pass, waiting for any queue spawned mid-pass (e.g. by a conflict duplicate) before exiting.
