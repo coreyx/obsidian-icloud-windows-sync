@@ -191,4 +191,15 @@ All settings live in `config.yaml`:
 | `stabilize_wait` | `8s` | Increase if you edit very slowly |
 | `tiny_threshold` | `8 bytes` | Minimum file size to sync (prevents empty/placeholder files) |
 | `max_concurrent_io` | `50` | Maximum concurrent I/O operations |
+| `log_retention` | `10` | How many past log *files* to keep (see Log rotation below) |
 | `ignore.patterns` | `[]` | Exclude folders like `.obsidian/cache` |
+
+### Log rotation
+
+Each daemon run (Start, Run Once, or a plain console launch) writes to one new file, `<logs_dir>\sync_<timestamp>.log`, for its entire lifetime. Rotation is **by file count only, checked once at startup** -- when the daemon starts, it deletes the oldest `.log` files beyond `log_retention` (default 10), keeping the newest ones. There is no size- or time-based rotation, and nothing prunes mid-run.
+
+Practically, that means:
+- A single log file has **no size cap**. If you run the daemon continuously for a long stretch without restarting it, that one file just keeps growing for as long as the process runs -- a vault with a lot of file activity can produce a multi-megabyte log well within a single day.
+- The **Live Log window has no cap of its own either**. It loads the entire current log file into its text widget on open, then appends new lines as they're written -- so its memory use tracks the current log file's size directly, with nothing evicted as it grows.
+
+None of this causes errors or data loss, but on a long-running, active vault, expect both the current log file and the Live Log window's memory footprint to grow without bound until the daemon is restarted (which is when the file-count-based cleanup above finally runs, on the *next* startup). If this matters for your setup, restarting the daemon periodically (or lowering `log_retention`, which only affects how many *old* files survive, not the size of the current one) is the current mitigation.
