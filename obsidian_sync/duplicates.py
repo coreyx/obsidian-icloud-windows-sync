@@ -56,10 +56,30 @@ class DuplicateScanner:
             self.log.warn("DUPLICATE", self.config.disp(p), level="important")
 
         self.log.warn("ACTION", "Delete them WITHOUT RECOVERY before sync? (y/N)", level="important")
+
+        if not sys.stdin or not sys.stdin.isatty():
+            # input() blocks forever waiting for a keystroke that can never
+            # arrive when there's no real interactive console attached --
+            # confirmed by hand: a tray-launched daemon (CREATE_NO_WINDOW,
+            # no console) with duplicate/conflict files sitting unresolved
+            # hung indefinitely at 0% CPU, with nothing written to the log
+            # file to explain why (the prompt line never reached the
+            # 20-message auto-flush threshold). The tray's own Stop can't
+            # help either -- the daemon never gets far enough to start
+            # watching for the stop file.
+            self.log.warn(
+                "INFO",
+                "No interactive console attached -- skipping the duplicate-cleanup "
+                "prompt automatically. Run the daemon from a terminal, or remove "
+                "these files yourself, to clean them up.",
+                level="important",
+            )
+            return
+
         sys.stdout.flush()
         try:
             ans = input().strip().lower()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
             print()
             self.log.warn("INFO", "Interrupted, skipping duplicate cleanup.", level="important")
             return

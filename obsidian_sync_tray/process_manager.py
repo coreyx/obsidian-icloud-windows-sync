@@ -157,6 +157,20 @@ class ProcessManager:
             proc = subprocess.Popen(
                 args,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                # CREATE_NO_WINDOW still allocates the console-subsystem
+                # daemon a real, if hidden, console -- its stdin is a valid
+                # handle that isatty() reports as a real terminal, so the
+                # daemon has no reliable way to tell "no one can type into
+                # this" on its own. Confirmed by hand: with that inherited
+                # stdin, the duplicate-scan y/N prompt (obsidian_sync/
+                # duplicates.py) blocked forever waiting for a keystroke
+                # that could never arrive, hanging the daemon at 0% CPU
+                # indefinitely, invisible to Stop since it never got far
+                # enough to start watching for the stop file. Explicitly
+                # redirecting stdin to a null device makes any future read
+                # of it hit EOF immediately instead, no matter what code
+                # eventually tries to read from it.
+                stdin=subprocess.DEVNULL,
             )
         except OSError as e:
             self.log.error(f"Failed to launch daemon ({'once' if once else 'daemon'})", e)

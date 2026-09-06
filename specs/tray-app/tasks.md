@@ -64,4 +64,5 @@
   - Test-isolation leaks into the real `%APPDATA%` tray log and a literal `C:\fake\` directory
   - Live Log window unclosable while Options was also open (`OptionsWindow.grab_set()` redirecting all pointer events application-wide, per documented Tcl/Tk `grab` semantics)
   - Live Log window showed plain uncolored text and was missing the startup banner and duplicate-scan lines (`obsidian_sync/__main__.py`, `logger.py`, `obsidian_sync_tray/log_viewer.py`)
+  - Daemon hung indefinitely at startup whenever a conflict/duplicate file was found, since `CREATE_NO_WINDOW` still gives it a real (if hidden, unusable) console for `duplicates.py`'s `input()` prompt to block on (`obsidian_sync_tray/process_manager.py`: `stdin=subprocess.DEVNULL`; `obsidian_sync/duplicates.py`: skip the prompt when there's no real console)
   - _Requirements: 2.5, 2.6, 12, 13_

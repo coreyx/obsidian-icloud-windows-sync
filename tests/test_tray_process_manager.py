@@ -91,6 +91,23 @@ class TestStateTransitions:
         assert "--once" in args
         assert ts.read(isolated_state_path).mode == "once"
 
+    def test_start_redirects_stdin_to_devnull(self, isolated_state_path, fake_config):
+        # Regression test: CREATE_NO_WINDOW still gives a console-subsystem
+        # daemon a real (hidden) console, whose stdin isatty() reports as a
+        # genuine terminal -- the daemon has no reliable way to tell no one
+        # can type into it. Confirmed by hand: with stdin left inherited,
+        # duplicates.py's y/N prompt blocked forever the moment any
+        # duplicate/conflict file was found, hanging the daemon at 0% CPU,
+        # invisible to Stop. Explicit stdin=DEVNULL makes any read of it
+        # hit EOF immediately instead, regardless of what tries to read it.
+        fake_proc = MagicMock(pid=4242)
+        with patch("obsidian_sync_tray.process_manager.SyncConfig.from_yaml", return_value=fake_config), \
+             patch("obsidian_sync_tray.process_manager.subprocess.Popen", return_value=fake_proc) as popen:
+            manager = _manager()
+            manager.start()
+
+        assert popen.call_args.kwargs["stdin"] == pm.subprocess.DEVNULL
+
     def test_start_is_noop_while_already_running(self, isolated_state_path, fake_config):
         fake_proc = MagicMock(pid=1)
         with patch("obsidian_sync_tray.process_manager.SyncConfig.from_yaml", return_value=fake_config), \

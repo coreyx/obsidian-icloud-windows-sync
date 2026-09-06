@@ -7,6 +7,15 @@ from conftest import DuplicateScanner
 def scanner(cfg, mock_log, mock_disk_io):
     return DuplicateScanner(cfg, mock_log, mock_disk_io)
 
+@pytest.fixture(autouse=True)
+def interactive_stdin():
+    # Every test in this file below assumes a real interactive console,
+    # matching how scan_and_clean()'s y/N prompt has always been tested --
+    # TestNonInteractive overrides this to verify the opposite path (no
+    # console attached, e.g. a tray-launched subprocess).
+    with patch("sys.stdin.isatty", return_value=True):
+        yield
+
 #  No Duplicates
 
 class TestNoDuplicates:
@@ -131,3 +140,50 @@ class TestUserInteraction:
             scanner.scan_and_clean()
         err_args = scanner.log.error.call_args_list[0][0]
         assert "3" in str(err_args)
+
+#  Non-interactive (no console attached)
+
+class TestNonInteractive:
+    # Regression coverage: scan_and_clean() used to call input()
+    # unconditionally. Launched detached (as the tray app does, via
+    # CREATE_NO_WINDOW with no console), that blocks forever waiting for a
+    # keystroke that can never arrive -- confirmed by hand: the daemon sat
+    # at 0% CPU indefinitely, wrote nothing to its log file (the prompt
+    # line never reached the 20-message auto-flush threshold), and Stop
+    # couldn't help either, since the daemon never got far enough to start
+    # watching for the stop file.
+
+    def _create_dup(self, cfg):
+        p = os.path.join(cfg.local_vault, "note_CONFLICT_20260101_120000_000001.md")
+        open(p, "w").close()
+        return p
+
+    def test_skips_prompt_without_hanging_when_stdin_is_not_a_tty(self, scanner, cfg):
+        self._create_dup(cfg)
+        with patch("sys.stdin.isatty", return_value=False), \
+             patch("builtins.input") as mock_input:
+            scanner.scan_and_clean()
+        mock_input.assert_not_called()
+        scanner.io.remove_file_sync.assert_not_called()
+
+    def test_skips_prompt_when_stdin_is_none(self, scanner, cfg):
+        # A frozen, windowed subprocess can have sys.stdin be None entirely
+        # -- guard against AttributeError on `None.isatty()` too.
+        self._create_dup(cfg)
+        with patch("sys.stdin", None), \
+             patch("builtins.input") as mock_input:
+            scanner.scan_and_clean()
+        mock_input.assert_not_called()
+        scanner.io.remove_file_sync.assert_not_called()
+
+    def test_logs_an_explanatory_warning_when_skipped(self, scanner, cfg):
+        self._create_dup(cfg)
+        with patch("sys.stdin.isatty", return_value=False):
+            scanner.scan_and_clean()
+        scanner.log.warn.assert_any_call(
+            "INFO",
+            "No interactive console attached -- skipping the duplicate-cleanup "
+            "prompt automatically. Run the daemon from a terminal, or remove "
+            "these files yourself, to clean them up.",
+            level="important",
+        )
