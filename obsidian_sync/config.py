@@ -30,6 +30,7 @@ class SyncConfig:
     shorter_paths: bool = True
     max_display_length: int = 50
     log_retention: int = 10
+    max_log_size_mb: int = 10
     # Ignore
     ignore_patterns: list[str] = field(default_factory=list)
     ignored_dirs: set[str] = field(default_factory=lambda: set(DEFAULT_IGNORED_DIRS))
@@ -78,6 +79,7 @@ class SyncConfig:
             shorter_paths=logging_cfg.get("shorter_paths", True),
             max_display_length=logging_cfg.get("max_display_length", 50),
             log_retention=logging_cfg.get("log_retention", 10),
+            max_log_size_mb=logging_cfg.get("max_log_size_mb", 10),
             ignore_patterns=ignore.get("patterns", []),
             ignored_dirs=set(ignore.get("dirs", DEFAULT_IGNORED_DIRS)),
             ignored_files=set(ignore.get("files", DEFAULT_IGNORED_FILES)),
@@ -112,6 +114,7 @@ class SyncConfig:
                 "shorter_paths": self.shorter_paths,
                 "max_display_length": self.max_display_length,
                 "log_retention": self.log_retention,
+                "max_log_size_mb": self.max_log_size_mb,
             },
             "ignore": {
                 "patterns": list(self.ignore_patterns),

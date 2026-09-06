@@ -192,14 +192,13 @@ All settings live in `config.yaml`:
 | `tiny_threshold` | `8 bytes` | Minimum file size to sync (prevents empty/placeholder files) |
 | `max_concurrent_io` | `50` | Maximum concurrent I/O operations |
 | `log_retention` | `10` | How many past log *files* to keep (see Log rotation below) |
+| `max_log_size_mb` | `10` | Size, in MB, a log file can reach before the daemon starts a new one |
 | `ignore.patterns` | `[]` | Exclude folders like `.obsidian/cache` |
 
 ### Log rotation
 
-Each daemon run (Start, Run Once, or a plain console launch) writes to one new file, `<logs_dir>\sync_<timestamp>.log`, for its entire lifetime. Rotation is **by file count only, checked once at startup** -- when the daemon starts, it deletes the oldest `.log` files beyond `log_retention` (default 10), keeping the newest ones. There is no size- or time-based rotation, and nothing prunes mid-run.
+A daemon run (Start, Run Once, or a plain console launch) starts one file, `<logs_dir>\sync_<timestamp>.log`, and writes to it until either the process exits or that file crosses `max_log_size_mb` -- whichever comes first. Crossing the size threshold starts a **new** file with the same naming, mid-run, without restarting anything; there's no separate "rotated" naming or format, a rotated file looks identical to a fresh process's first file.
 
-Practically, that means:
-- A single log file has **no size cap**. If you run the daemon continuously for a long stretch without restarting it, that one file just keeps growing for as long as the process runs -- a vault with a lot of file activity can produce a multi-megabyte log well within a single day.
-- The **Live Log window has no cap of its own either**. It loads the entire current log file into its text widget on open, then appends new lines as they're written -- so its memory use tracks the current log file's size directly, with nothing evicted as it grows.
+Old files are pruned by count (`log_retention`, default 10, keeping the newest): once at daemon startup, and again immediately after any size-triggered rotation during a long-running session -- so a daemon that never restarts still doesn't accumulate files without bound.
 
-None of this causes errors or data loss, but on a long-running, active vault, expect both the current log file and the Live Log window's memory footprint to grow without bound until the daemon is restarted (which is when the file-count-based cleanup above finally runs, on the *next* startup). If this matters for your setup, restarting the daemon periodically (or lowering `log_retention`, which only affects how many *old* files survive, not the size of the current one) is the current mitigation.
+The **Live Log window** is bounded too: opening it (or switching to a newly-rotated file) loads only the last ~256KB of the file rather than the whole thing, and the window caps itself at ~5000 displayed lines, discarding the oldest as new ones arrive -- the same model as a terminal's scrollback buffer. Between the file-side rotation and the viewer-side cap, neither disk usage nor the tray's memory should grow unbounded over an arbitrarily long uptime.

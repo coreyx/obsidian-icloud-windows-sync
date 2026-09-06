@@ -75,7 +75,7 @@ class TestFieldSet:
                 "check_icloud_status", "poll_interval", "stability_window",
                 "stabilize_wait", "tiny_threshold", "max_concurrent_io",
                 "console_level", "shorter_paths", "max_display_length",
-                "log_retention", "ignore_patterns", "ignored_dirs", "ignored_files",
+                "log_retention", "max_log_size_mb", "ignore_patterns", "ignored_dirs", "ignored_files",
             ):
                 assert attr in window._vars, attr
         finally:
@@ -141,6 +141,16 @@ class TestValidationAndSave:
         from obsidian_sync.config import SyncConfig
         reloaded = SyncConfig.from_yaml(config_path)
         assert reloaded.poll_interval == 9
+
+    def test_max_log_size_mb_round_trips_through_save(self, root, tmp_path):
+        config_path = _make_config_file(tmp_path)
+        window = OptionsWindow(root, config_path=config_path)
+        window._vars["max_log_size_mb"].set("25")
+        window._on_save()
+
+        from obsidian_sync.config import SyncConfig
+        reloaded = SyncConfig.from_yaml(config_path)
+        assert reloaded.max_log_size_mb == 25
 
 
 class TestTooltips:

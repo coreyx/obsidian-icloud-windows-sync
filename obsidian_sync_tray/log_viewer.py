@@ -61,6 +61,15 @@ TYPE_COLORS = {
 
 class LogViewerWindow(tk.Toplevel):
     POLL_MS = 1000
+    # Bounds this window's own memory use against an arbitrarily large log
+    # file or an arbitrarily long-open session -- same model as a
+    # terminal's scrollback buffer. Neither the on-disk log file nor this
+    # window's Text widget content is otherwise capped (see README's "Log
+    # rotation" section), so without these the window's memory would track
+    # the log file's size directly, unbounded, for as long as it stays open
+    # against an active daemon.
+    TAIL_BYTES = 256 * 1024
+    MAX_LINES = 5000
 
     def __init__(self, master, logs_dir: str):
         super().__init__(master)
@@ -105,6 +114,30 @@ class LogViewerWindow(tk.Toplevel):
             return None
         return max(candidates, key=os.path.getmtime)
 
+    def _tail_start_pos(self, path: str) -> int:
+        """
+        Byte offset to start reading from so a freshly-opened (or newly
+        switched-to) log file loads only its last TAIL_BYTES or so, rather
+        than the entire file. Reads in binary mode to land on a clean line
+        boundary via readline() -- a UTF-8 newline byte is never the middle
+        of a multi-byte character, so the resulting offset is safe to
+        pass to a later text-mode seek() on the same file.
+        """
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            return 0
+        if size <= self.TAIL_BYTES:
+            return 0
+        start = size - self.TAIL_BYTES
+        try:
+            with open(path, "rb") as f:
+                f.seek(start)
+                f.readline()  # discard the partial line straddling `start`
+                return f.tell()
+        except OSError:
+            return start
+
     def _insert_line(self, line: str):
         match = LINE_RE.match(line)
         if not match:
@@ -124,6 +157,16 @@ class LogViewerWindow(tk.Toplevel):
         self.text.insert("end", f"[{msg_type}] ", (tag,))
         self.text.insert("end", rest + "\n", ("plain",))
 
+    def _trim_scrollback(self):
+        # A Text widget's index counting has a permanent +1 offset even
+        # when genuinely empty (confirmed by hand: index("end-1c") reads
+        # "1.0" for zero real lines, "2.0" after the first) -- subtract it
+        # to get the actual number of log lines currently held.
+        real_lines = int(self.text.index("end-1c").split(".")[0]) - 1
+        excess = real_lines - self.MAX_LINES
+        if excess > 0:
+            self.text.delete("1.0", f"{excess + 1}.0")
+
     def _append(self, new_text: str):
         combined = self._pending_line + new_text
         lines = combined.split("\n")
@@ -134,6 +177,7 @@ class LogViewerWindow(tk.Toplevel):
         self.text.configure(state="normal")
         for line in lines:
             self._insert_line(line)
+        self._trim_scrollback()
         self.text.see("end")
         self.text.configure(state="disabled")
 
@@ -141,7 +185,7 @@ class LogViewerWindow(tk.Toplevel):
         latest = self._latest_log_path()
         if latest != self._log_path:
             self._log_path = latest
-            self._read_pos = 0
+            self._read_pos = self._tail_start_pos(latest) if latest else 0
             self._pending_line = ""
             self.text.configure(state="normal")
             self.text.delete("1.0", "end")

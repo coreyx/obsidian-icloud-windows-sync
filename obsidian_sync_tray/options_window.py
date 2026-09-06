@@ -16,6 +16,7 @@ PATH_FIELDS = ("local_vault", "icloud_vault", "history_dir", "logs_dir")
 INT_FIELDS = (
     "poll_interval", "stability_window", "stabilize_wait",
     "tiny_threshold", "max_concurrent_io", "max_display_length", "log_retention",
+    "max_log_size_mb",
 )
 
 # One line of hover help per config field, keyed by the same `attr` name
@@ -35,6 +36,7 @@ TOOLTIPS = {
     "shorter_paths": "Shorten long file paths in log output for readability.",
     "max_display_length": "Maximum path length, in characters, before it's shortened in log output.",
     "log_retention": "How many past log files to keep before older ones are deleted automatically.",
+    "max_log_size_mb": "Maximum size, in megabytes, of a single log file before the daemon starts a new one. Keeps one long-running session from growing an unbounded log file.",
     "ignore_patterns": "Glob-style filename patterns to exclude from sync, one per line (e.g. *.tmp).",
     "ignored_dirs": "Directory names to exclude from sync entirely, one per line (e.g. .trash).",
     "ignored_files": "Exact filenames to exclude from sync, one per line (e.g. .DS_Store).",
@@ -179,6 +181,7 @@ class OptionsWindow(tk.Toplevel):
         self._add_bool_field(frame, 1, "Shorten displayed paths", "shorter_paths")
         self._add_int_field(frame, 2, "Max display length:", "max_display_length")
         self._add_int_field(frame, 3, "Log retention (files):", "log_retention")
+        self._add_int_field(frame, 4, "Max log file size (MB):", "max_log_size_mb")
 
     def _add_list_field(self, parent, row, label, attr, values):
         label_widget = tk.Label(parent, text=label)

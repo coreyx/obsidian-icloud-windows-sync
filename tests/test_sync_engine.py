@@ -558,6 +558,48 @@ class TestRunMode:
         assert task.done() and not task.cancelled()
 
 
+class TestPeriodicCheckpointRotationCleanup:
+    # cleanup_old_logs() always runs once at the top of run() regardless;
+    # these assert the *periodic* checkpoint only re-runs it when a
+    # rotation actually just happened, not on every tick.
+
+    @pytest.mark.asyncio
+    async def test_no_extra_cleanup_when_no_rotation_happened(self, engine, cfg, mock_log):
+        cfg.run_continuously = True
+        cfg.poll_interval = 0.01
+        engine.CHECKPOINT_INTERVAL_SECONDS = 0.05
+        engine.synchronizer.sync_wrapper = AsyncMock()
+        mock_log.consume_rotation_flag.return_value = False
+
+        # _wait_or_stop's own stop-file poll granularity is a fixed 0.5s
+        # (independent of poll_interval), so each outer loop iteration
+        # takes roughly that long regardless -- wait long enough for at
+        # least one full iteration to land on top of the startup call.
+        task = asyncio.create_task(engine.run())
+        await asyncio.sleep(0.8)
+        task.cancel()
+        await asyncio.wait_for(task, timeout=1)
+
+        mock_log.flush.assert_called()
+        assert mock_log.cleanup_old_logs.call_count == 1  # just the startup call
+
+    @pytest.mark.asyncio
+    async def test_cleanup_reruns_after_a_rotation(self, engine, cfg, mock_log):
+        cfg.run_continuously = True
+        cfg.poll_interval = 0.01
+        engine.CHECKPOINT_INTERVAL_SECONDS = 0.05
+        engine.synchronizer.sync_wrapper = AsyncMock()
+        mock_log.consume_rotation_flag.return_value = True
+
+        task = asyncio.create_task(engine.run())
+        await asyncio.sleep(0.8)
+        task.cancel()
+        await asyncio.wait_for(task, timeout=1)
+
+        # startup call + at least one periodic-checkpoint-triggered call
+        assert mock_log.cleanup_old_logs.call_count > 1
+
+
 class TestWatcherScopeAndSuppression:
     def test_observer_watches_only_local_and_icloud(self, engine, cfg):
         with patch("obsidian_sync.sync_engine.Observer") as observer_cls:

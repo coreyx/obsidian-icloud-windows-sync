@@ -45,6 +45,11 @@ class SyncEventHandler(FileSystemEventHandler):
 
 
 class SyncEngine:
+    # Class attribute (not a local in run()) so tests can shrink it to
+    # exercise the periodic checkpoint -- state save, log flush/rotation --
+    # without a real multi-second wait.
+    CHECKPOINT_INTERVAL_SECONDS = 5
+
     def __init__(self, config, logger, hasher, disk_io, duplicates):
         self.config = config
         self.log = logger
@@ -362,11 +367,17 @@ class SyncEngine:
                         self.log.idle()
 
                     now = loop.time()
-                    #  periodic checkpoint timer: every 5s it saves the hasher state if dirty and flushes logs
-                    if now - last_save > 5:
+                    #  periodic checkpoint timer: every CHECKPOINT_INTERVAL_SECONDS it saves the hasher state if dirty and flushes logs
+                    if now - last_save > self.CHECKPOINT_INTERVAL_SECONDS:
                         if self.hasher.dirty:
                             self.hasher.save_state()
                         self.log.flush()
+                        # Only re-sweep the logs directory when flush() just
+                        # rotated to a new file -- no need to list it every
+                        # 5s otherwise, since the startup sweep already
+                        # covers everything up to this run's own file.
+                        if self.log.consume_rotation_flag():
+                            await self.log.cleanup_old_logs()
                         last_save = now
                 except Exception as outer:
                     self.log.error("ERROR", f"Unexpected error in main loop: {outer}")

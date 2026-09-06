@@ -68,7 +68,7 @@
   - A daemon that crashes before its own log file's first flush left zero trace anywhere; `_launch()` now captures stdout/stderr unconditionally to `daemon_startup.log` (`obsidian_sync_tray/process_manager.py`)
   - _Requirements: 2.5, 2.6, 12, 13_
 
-- [ ] 11. Bounded log growth (Requirement 14)
+- [x] 11. Bounded log growth (Requirement 14)
   - `obsidian_sync/config.py`: new `max_log_size_mb` field (`logging:` section, default 10), following `log_retention`'s existing pattern through `from_yaml`/`to_dict`
   - `obsidian_sync/logger.py`: `flush()` checks cumulative bytes written against `max_log_size_mb` and starts a new `sync_<timestamp>.log` (same naming `init_log_file()` already uses) once past it, so rotation is indistinguishable from a fresh process's log file to every existing consumer
   - `obsidian_sync/sync_engine.py`: call `cleanup_old_logs()` from the existing ~5s checkpoint (not just once at startup), throttled to only re-sweep right after a rotation actually happens

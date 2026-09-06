@@ -46,7 +46,17 @@ class SyncLogger:
         self.config = config
         self.log_file: str | None = None
         self._buffer: list[str] = []
+        self._current_file_bytes = 0
+        self._just_rotated = False
         colorama_init()
+
+    def _generate_log_path(self) -> str:
+        # Microsecond precision: rotation (see flush()) can start a new file
+        # more than once within the same second under a small
+        # max_log_size_mb and bursty logging, and second-precision names
+        # would collide.
+        ts = datetime.now().strftime('%Y-%m-%d_%H-%M-%S_%f')
+        return os.path.join(self.config.logs_dir, f"sync_{ts}.log")
 
     def init_log_file(self):
         """
@@ -60,8 +70,19 @@ class SyncLogger:
         """
         if self.log_file:
             return
-        ts = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        self.log_file = os.path.join(self.config.logs_dir, f"sync_{ts}.log")
+        self.log_file = self._generate_log_path()
+        self._current_file_bytes = 0
+
+    def consume_rotation_flag(self) -> bool:
+        """
+        Returns whether a size-triggered rotation (see flush()) has
+        happened since the last call, resetting the flag. Lets
+        SyncEngine's periodic checkpoint re-run cleanup_old_logs() only
+        when a rotation actually just produced a new file to prune around,
+        instead of sweeping the logs directory on every tick.
+        """
+        rotated, self._just_rotated = self._just_rotated, False
+        return rotated
 
     #  Core output
 
@@ -103,14 +124,27 @@ class SyncLogger:
 
     def flush(self):
         """
-        Writes all buffered log messages to the log file and clears the buffer.
+        Writes all buffered log messages to the log file and clears the
+        buffer. Rotates to a new file (same `sync_<timestamp>.log` naming
+        a fresh process launch already produces) once the current one
+        crosses `config.max_log_size_mb`, so nothing that discovers log
+        files by name/mtime -- the Live Log window, `cleanup_old_logs()`
+        -- needs to treat a mid-run rotation any differently from a daemon
+        restart.
         """
         if not self._buffer or not self.log_file:
             return
         try:
+            written = "".join(self._buffer)
             with open(self.log_file, 'a', encoding='utf-8') as f:
-                f.writelines(self._buffer)
+                f.write(written)
             self._buffer.clear()
+            self._current_file_bytes += len(written.encode('utf-8'))
+            max_bytes = max(1, self.config.max_log_size_mb) * 1024 * 1024
+            if self._current_file_bytes >= max_bytes:
+                self.log_file = self._generate_log_path()
+                self._current_file_bytes = 0
+                self._just_rotated = True
         except Exception as e:
             self.console_event("", Fore.RED, "FAILED", f"Log Write Failed: {e}", level="important")
 

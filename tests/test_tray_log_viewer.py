@@ -171,3 +171,70 @@ class TestColorization:
             assert win.text.tag_ranges("type_DONE")
         finally:
             win.destroy()
+
+
+class TestBoundedMemory:
+    # Regression coverage for unbounded growth: neither the on-disk log
+    # file nor this window previously capped anything -- opening a large
+    # file loaded it wholesale, and an open window tailing an active
+    # daemon just kept appending forever. TAIL_BYTES/MAX_LINES are
+    # monkeypatched down here so these stay fast and deterministic instead
+    # of needing real megabyte-sized fixtures.
+
+    def _stop_polling(self, win):
+        if win._poll_job:
+            win.after_cancel(win._poll_job)
+            win._poll_job = None
+
+    def test_large_file_loads_only_the_tail_on_open(self, root, tmp_path, monkeypatch):
+        monkeypatch.setattr(LogViewerWindow, "TAIL_BYTES", 60)
+        lines = [f"line{i:02d} filler text here\n" for i in range(30)]
+        (tmp_path / "sync_2026-01-01_00-00-00.log").write_text("".join(lines), encoding="utf-8")
+
+        win = LogViewerWindow(root, str(tmp_path))
+        try:
+            self._stop_polling(win)
+            content = win.text.get("1.0", "end")
+            assert "line00" not in content
+            assert "line29" in content
+        finally:
+            win.destroy()
+
+    def test_small_file_still_loads_from_the_start(self, root, tmp_path, monkeypatch):
+        monkeypatch.setattr(LogViewerWindow, "TAIL_BYTES", 1024 * 1024)
+        (tmp_path / "sync_2026-01-01_00-00-00.log").write_text(
+            "first line\nsecond line\n", encoding="utf-8"
+        )
+
+        win = LogViewerWindow(root, str(tmp_path))
+        try:
+            self._stop_polling(win)
+            content = win.text.get("1.0", "end")
+            assert "first line" in content
+            assert "second line" in content
+        finally:
+            win.destroy()
+
+    def test_scrollback_trims_oldest_lines_once_over_the_cap(self, root, tmp_path, monkeypatch):
+        monkeypatch.setattr(LogViewerWindow, "MAX_LINES", 5)
+        monkeypatch.setattr(LogViewerWindow, "TAIL_BYTES", 1024 * 1024)
+        log_path = tmp_path / "sync_2026-01-01_00-00-00.log"
+        log_path.write_text("", encoding="utf-8")
+
+        win = LogViewerWindow(root, str(tmp_path))
+        try:
+            self._stop_polling(win)
+            with open(log_path, "a", encoding="utf-8") as f:
+                for i in range(10):
+                    f.write(f"line{i}\n")
+            win._poll()
+            self._stop_polling(win)
+
+            content = win.text.get("1.0", "end")
+            assert "line4" not in content  # oldest, evicted
+            assert "line5" in content
+            assert "line9" in content  # newest, kept
+            real_lines = int(win.text.index("end-1c").split(".")[0]) - 1
+            assert real_lines == 5
+        finally:
+            win.destroy()

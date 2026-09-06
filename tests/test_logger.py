@@ -247,6 +247,57 @@ class TestInitLogFile:
         log.init_log_file()
         assert log.log_file == first_path
 
+#  rotation (max_log_size_mb)
+
+class TestRotation:
+    def test_flush_rotates_once_max_log_size_mb_is_crossed(self, cfg, tmp_path):
+        cfg.max_log_size_mb = 1
+        log = SyncLogger(cfg)
+        log.log_file = str(tmp_path / "logs" / "sync_first.log")
+        log._current_file_bytes = 1024 * 1024 - 5
+        log._buffer = ["x" * 20 + "\n"]  # 21 bytes -- pushes it over 1 MiB
+        first_path = log.log_file
+
+        log.flush()
+
+        assert log.log_file != first_path
+        assert log._current_file_bytes < 1024 * 1024
+        assert log._just_rotated is True
+        with open(first_path, encoding="utf-8") as f:
+            assert "x" * 20 in f.read()
+
+    def test_flush_does_not_rotate_under_the_threshold(self, cfg, tmp_path):
+        cfg.max_log_size_mb = 10
+        log = SyncLogger(cfg)
+        log.log_file = str(tmp_path / "logs" / "sync_first.log")
+        log._buffer = ["short line\n"]
+        first_path = log.log_file
+
+        log.flush()
+
+        assert log.log_file == first_path
+        assert log._just_rotated is False
+
+    def test_rotated_file_uses_the_same_naming_scheme(self, cfg, tmp_path):
+        cfg.max_log_size_mb = 1
+        log = SyncLogger(cfg)
+        log.log_file = str(tmp_path / "logs" / "sync_first.log")
+        log._current_file_bytes = 1024 * 1024
+        log._buffer = ["trigger\n"]
+
+        log.flush()
+
+        filename = os.path.basename(log.log_file)
+        assert filename.startswith("sync_")
+        assert filename.endswith(".log")
+        assert os.path.dirname(log.log_file) == cfg.logs_dir
+
+    def test_consume_rotation_flag_resets_after_reading(self, cfg):
+        log = SyncLogger(cfg)
+        log._just_rotated = True
+        assert log.consume_rotation_flag() is True
+        assert log.consume_rotation_flag() is False
+
 #  list_log_files
 
 class TestListLogFiles:

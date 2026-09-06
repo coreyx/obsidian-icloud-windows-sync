@@ -248,6 +248,7 @@ class TestSaveRoundTrip:
         cfg.ignored_files = {".ds_store", "workspace.json"}
         cfg.poll_interval = 7
         cfg.console_level = "verbose"
+        cfg.max_log_size_mb = 25
 
         out_path = tmp_path / "roundtrip.yaml"
         cfg.save(str(out_path))
@@ -258,7 +259,7 @@ class TestSaveRoundTrip:
             "run_continuously", "check_icloud_status", "poll_interval",
             "stability_window", "stabilize_wait", "tiny_threshold",
             "max_concurrent_io", "console_level", "shorter_paths",
-            "max_display_length", "log_retention",
+            "max_display_length", "log_retention", "max_log_size_mb",
         ):
             assert getattr(reloaded, field_name) == getattr(cfg, field_name), field_name
 
