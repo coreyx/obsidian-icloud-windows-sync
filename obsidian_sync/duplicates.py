@@ -26,17 +26,38 @@ class DuplicateScanner:
         The method iterates through the local vault, iCloud vault, and history directory.
         It identifies files matching three specific regex patterns:
         1. Conflict files (e.g., `_CONFLICT_YYYYMMDD_HHMMSS_ffffff`)
-        2. iCloud duplicates (e.g., `filename (1).md`)
+        2. iCloud duplicates (e.g., `filename (1).md`) -- only when the
+           un-suffixed sibling (`filename.md`) also exists alongside it,
+           which is the actual signature of a real iCloud-created
+           duplicate (it only appends " (N)" because the original was
+           already there). A lone match with no such sibling -- e.g. a
+           normally-titled note like "Drive (2011).md" -- is a false
+           positive, not a duplicate; confirmed by hand against a real
+           vault where this previously flagged a single ordinary note as
+           three "duplicates" (one per vault it was correctly, fully
+           synced to) with nothing actually wrong.
         3. Temporary files (e.g., `.tmp` extension)
+
+        Each finding is tagged with which of the three roots it came from,
+        since the exact same relative path legitimately exists in more
+        than one root for a fully-synced file -- without that label,
+        "duplicates" found once per root all look identical to each other.
         """
         conflict_re = re.compile(r'_CONFLICT_\d{8}_\d{6}_\d{6}')
         icloud_dup_re = re.compile(r'\s\(\d+\)\.[^.]+$')
+        icloud_dup_base_re = re.compile(r'\s\(\d+\)(\.[^.]+)$')
         tmp_re = re.compile(r'\.tmp$')
 
-        duplicates = []
+        roots = [
+            ("Local", self.config.local_vault),
+            ("iCloud", self.config.icloud_vault),
+            ("History", self.config.history_dir),
+        ]
+
+        duplicates = []  # list of (abs_path, root_label)
         self.log.info("INFO", "Scanning for conflict/duplicate files...", level="important")
 
-        for root_dir in [self.config.local_vault, self.config.icloud_vault, self.config.history_dir]:
+        for root_label, root_dir in roots:
             if not root_dir or not os.path.exists(root_dir):
                 continue
             for dirpath, _, filenames in os.walk(root_dir):
@@ -44,16 +65,20 @@ class DuplicateScanner:
                 if '.trash' in parts:
                     continue
                 for f in filenames:
-                    if conflict_re.search(f) or icloud_dup_re.search(f) or tmp_re.search(f):
-                        duplicates.append(os.path.join(dirpath, f))
+                    if conflict_re.search(f) or tmp_re.search(f):
+                        duplicates.append((os.path.join(dirpath, f), root_label))
+                    elif icloud_dup_re.search(f):
+                        base_name = icloud_dup_base_re.sub(r'\1', f)
+                        if os.path.exists(os.path.join(dirpath, base_name)):
+                            duplicates.append((os.path.join(dirpath, f), root_label))
 
         if not duplicates:
             self.log.success("CLEAN", "No duplicates found.", level="important")
             return
 
         self.log.error("DANGER", f"Found {len(duplicates)} potential conflict/duplicate files.", level="important")
-        for p in duplicates:
-            self.log.warn("DUPLICATE", self.config.disp(p), level="important")
+        for p, root_label in duplicates:
+            self.log.warn("DUPLICATE", f"[{root_label}] {self.config.disp(p)}", level="important")
 
         self.log.warn("ACTION", "Delete them WITHOUT RECOVERY before sync? (y/N)", level="important")
 
@@ -86,14 +111,14 @@ class DuplicateScanner:
 
         if ans in ('y', 'yes'):
             failed_deletions = []
-            for p in duplicates:
+            for p, root_label in duplicates:
                 self.io.remove_file_sync(p, "Duplicate/Conflict")
                 if os.path.exists(p):
-                    failed_deletions.append(p)
+                    failed_deletions.append((p, root_label))
             if failed_deletions:
                 self.log.error("CLEAN", f"Removed {len(duplicates) - len(failed_deletions)} of {len(duplicates)} duplicates; {len(failed_deletions)} could not be removed.", level="important")
-                for p in failed_deletions:
-                    self.log.warn("FAILED", self.config.disp(p), level="important")
+                for p, root_label in failed_deletions:
+                    self.log.warn("FAILED", f"[{root_label}] {self.config.disp(p)}", level="important")
             else:
                 self.log.success("CLEAN", "All duplicates removed.", level="important")
         else:

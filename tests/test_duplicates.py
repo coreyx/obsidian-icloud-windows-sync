@@ -51,11 +51,27 @@ class TestPatternDetection:
             scanner.scan_and_clean()
         scanner.log.warn.assert_called()
 
-    def test_detects_icloud_duplicate(self, scanner, cfg):
+    def test_detects_icloud_duplicate_when_the_base_file_also_exists(self, scanner, cfg):
+        # A real iCloud-created duplicate: "(N)" only ever gets appended
+        # because "My Note.md" was already there.
+        self._create(cfg.local_vault, "My Note.md")
         self._create(cfg.local_vault, "My Note (1).md")
         with patch("builtins.input", return_value="n"):
             scanner.scan_and_clean()
         scanner.log.warn.assert_called()
+
+    def test_does_not_flag_a_normally_titled_note_with_no_base_sibling(self, scanner, cfg):
+        # Regression: a lone file matching "(N).ext" with no un-suffixed
+        # sibling is just a normally-titled note (e.g. "Drive (2011).md",
+        # about something from 2011) -- confirmed by hand against a real
+        # vault, this used to flag it as a duplicate 3 times over (once
+        # per vault it was correctly, fully synced to) with nothing
+        # actually wrong.
+        self._create(cfg.local_vault, "Drive (2011).md")
+        with patch("builtins.input", return_value="n"):
+            scanner.scan_and_clean()
+        scanner.log.warn.assert_not_called()
+        scanner.log.success.assert_called_with("CLEAN", "No duplicates found.", level="important")
 
     def test_detects_tmp_file(self, scanner, cfg):
         self._create(cfg.local_vault, "stale.tmp")
@@ -81,10 +97,25 @@ class TestPatternDetection:
         scanner.log.warn.assert_called()
 
     def test_scans_history_dir(self, scanner, cfg):
+        self._create(cfg.history_dir, "archive.md")
         self._create(cfg.history_dir, "archive (2).md")
         with patch("builtins.input", return_value="n"):
             scanner.scan_and_clean()
         scanner.log.warn.assert_called()
+
+    def test_same_relative_path_across_roots_is_labeled_by_which_root(self, scanner, cfg):
+        # Regression: the same relative path legitimately exists in more
+        # than one root for a file that's fully synced (that's the normal,
+        # healthy state) -- displaying each finding identically made it
+        # look like the same file was duplicated N times over, when really
+        # it was N separate, real files, one per root.
+        self._create(cfg.local_vault, "note_CONFLICT_20260101_120000_000001.md")
+        self._create(cfg.icloud_vault, "note_CONFLICT_20260101_120000_000001.md")
+        with patch("builtins.input", return_value="n"):
+            scanner.scan_and_clean()
+        messages = [c.args[1] for c in scanner.log.warn.call_args_list if c.args[0] == "DUPLICATE"]
+        assert any(m.startswith("[Local]") for m in messages)
+        assert any(m.startswith("[iCloud]") for m in messages)
 
 #  User Interaction
 
