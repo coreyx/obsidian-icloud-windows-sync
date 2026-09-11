@@ -35,7 +35,7 @@ The easiest way to run this is the tray app + installer — no Python required o
 Requires [Inno Setup](https://jrsoftware.org/isinfo.php) (`ISCC.exe` on `PATH`, or in its default install location) and a Python environment with this repo cloned:
 
 ```powershell
-git clone git@github.com:gursimar/obsidian-icloud-windows-sync.git
+git clone git@github.com:coreyx/obsidian-icloud-windows-sync.git
 cd obsidian-icloud-windows-sync
 .\installer\build.ps1
 ```
